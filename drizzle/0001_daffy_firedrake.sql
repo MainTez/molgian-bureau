@@ -1,0 +1,2 @@
+ALTER TABLE `pet_instances` ADD `generated_name` text DEFAULT 'mystery companion' NOT NULL;--> statement-breakpoint
+ALTER TABLE `pet_instances` ADD `generated_type_label` text DEFAULT 'fisher type' NOT NULL;

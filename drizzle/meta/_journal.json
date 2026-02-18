@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1771367861362,
+      "tag": "0000_cloudy_ultimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1771377951391,
+      "tag": "0001_daffy_firedrake",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771383040490,
+      "tag": "0002_cute_outlaw_kid",
+      "breakpoints": true
+    }
+  ]
+}
