@@ -139,7 +139,7 @@ Admin:
 - `/admin give-egg user:@user amount:<n>`
 - `/admin force-event name:<event>`
 - `/admin set-treasury amount:<n>`
-- `/admin post-citizens-panel` (posts/refreshes the Citizens role button in `#da-rules`)
+- `/admin post-citizens-panel` (posts/refreshes the Citizens role button in `#Immigration-Center`)
 - `/purge amount:<1-100>` (deletes both recent and old messages; pinned messages are skipped)
 
 ## 5. Daily Rules Implemented
@@ -158,7 +158,7 @@ Admin:
 - Faster live events: micro every ~20-40 minutes, major every ~1-2 hours (max 3 major/day)
 - Micro events are treasury-aware: when Treasury is empty, bot auto-runs refill-safe events (`tax_audit`/`pickpocket`) instead of dead payout events.
 - Event pings mention `@Citizens` role only (not `@everyone`)
-- On startup, bot maintains a `#da-rules` panel with a button users can click to self-assign `Citizens`
+- Admins can post/refresh a `#Immigration-Center` panel via `/admin post-citizens-panel` for self-assigning `Citizens`
 
 ## 6. Tests
 

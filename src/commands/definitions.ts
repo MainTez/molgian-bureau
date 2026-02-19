@@ -321,7 +321,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
     .addSubcommand((sub) =>
       sub
         .setName('post-citizens-panel')
-        .setDescription('Post or refresh the Citizens role button panel in #da-rules.')
+        .setDescription('Post or refresh the Citizens role button panel in #Immigration-Center.')
     )
 ];
 

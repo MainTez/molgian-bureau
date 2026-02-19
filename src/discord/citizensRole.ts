@@ -8,7 +8,7 @@ import {
 import { createBotEmbed } from './embeds.js';
 
 export const CITIZENS_ROLE_NAME = 'Citizens';
-export const RULES_CHANNEL_NAME = 'da-rules';
+export const RULES_CHANNEL_NAME = 'Immigration-Center';
 export const CLAIM_CITIZENS_ROLE_BUTTON_ID = 'citizens_role_claim';
 
 const panelDescription = (role: Role | null): string =>
