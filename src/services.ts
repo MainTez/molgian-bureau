@@ -767,7 +767,7 @@ export class MolgianService {
     return { ok: true, message: `You earned ${payout} Molgium from /work.` };
   }
 
-  public async raiseList(discordId: string, username: string): Promise<{
+  public async jobList(discordId: string, username: string): Promise<{
     currentSalaryBase: number;
     tiers: Array<{ id: number; cost: number; newSalaryBase: number; owned: boolean }>;
   }> {
@@ -780,31 +780,31 @@ export class MolgianService {
     };
   }
 
-  public async raiseBuy(
+  public async jobApply(
     discordId: string,
     username: string,
-    raiseId: number
+    jobId: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
-    const tier = RAISE_TIERS.find((entry) => entry.id === raiseId);
-    if (!tier) return { ok: false, message: 'Invalid raise id.' };
+    const tier = RAISE_TIERS.find((entry) => entry.id === jobId);
+    if (!tier) return { ok: false, message: 'Invalid job id.' };
     const owned = db.select().from(raisesOwned).where(eq(raisesOwned.userId, user.id)).all();
-    if (owned.some((entry) => entry.raiseId === raiseId)) return { ok: false, message: 'Raise already purchased.' };
+    if (owned.some((entry) => entry.raiseId === jobId)) return { ok: false, message: 'Job already acquired.' };
     const maxOwned = owned.reduce((max, current) => Math.max(max, current.raiseId), 0);
-    if (raiseId > maxOwned + 1) return { ok: false, message: 'Buy raises in order.' };
+    if (jobId > maxOwned + 1) return { ok: false, message: 'Apply for jobs in order.' };
     try {
       db.transaction((tx) => {
         const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
         if (!wallet) throw new Error('Wallet missing');
         if (wallet.amount < tier.cost) throw new Error('Insufficient Molgium');
         tx.update(balances).set({ amount: wallet.amount - tier.cost }).where(eq(balances.userId, user.id)).run();
-        tx.insert(raisesOwned).values({ userId: user.id, raiseId, purchasedAt: nowMs() }).run();
+        tx.insert(raisesOwned).values({ userId: user.id, raiseId: jobId, purchasedAt: nowMs() }).run();
         tx.update(users).set({ salaryBase: tier.newSalaryBase, updatedAt: nowMs() }).where(eq(users.id, user.id)).run();
       });
     } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : 'Raise purchase failed.' };
+      return { ok: false, message: error instanceof Error ? error.message : 'Job application failed.' };
     }
-    return { ok: true, message: `Raise ${raiseId} purchased. SalaryBase now ${tier.newSalaryBase}.` };
+    return { ok: true, message: `Job ${jobId} acquired. SalaryBase now ${tier.newSalaryBase}.` };
   }
 
   private findShopItem(itemId: string): ShopItem | null {

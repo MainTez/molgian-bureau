@@ -58,6 +58,7 @@ const editReplyWithEmbed = async (
 
 const COINFLIP_ANIMATION_FRAMES = ['Coin tossed...', 'Coin spinning...', 'Coin landing...'];
 const ANIMATION_STEP_MS = 450;
+const PURGE_OLD_DELETE_DELAY_MS = 150;
 
 export const handleInteraction = async (
   interaction: ChatInputCommandInteraction,
@@ -76,26 +77,26 @@ export const handleInteraction = async (
     return;
   }
 
-  if (interaction.commandName === 'raise') {
+  if (interaction.commandName === 'job') {
     const sub = interaction.options.getSubcommand();
     if (sub === 'list') {
-      const result = await services.game.raiseList(discordId, username);
+      const result = await services.game.jobList(discordId, username);
       const lines = result.tiers.map(
         (tier) =>
-          `${tier.id}. cost ${tier.cost}, SalaryBase ${tier.newSalaryBase}${tier.owned ? ' [owned]' : ''}`
+          `${tier.id}. apply cost ${tier.cost}, SalaryBase ${tier.newSalaryBase}${tier.owned ? ' [hired]' : ''}`
       );
       await replyWithEmbed(
         interaction,
-        `Current SalaryBase: ${result.currentSalaryBase}\n${lines.length ? lines.join('\n') : 'No raises configured.'}`,
-        { title: 'Raise List' }
+        `Current SalaryBase: ${result.currentSalaryBase}\n${lines.length ? lines.join('\n') : 'No jobs configured.'}`,
+        { title: 'Job List' }
       );
       return;
     }
-    const raiseId = interaction.options.getInteger('id', true);
-    const result = await services.game.raiseBuy(discordId, username, raiseId);
+    const jobId = interaction.options.getInteger('id', true);
+    const result = await services.game.jobApply(discordId, username, jobId);
     await replyWithEmbed(interaction, result.message, {
       tone: result.ok ? 'success' : 'warning',
-      title: 'Raise Purchase'
+      title: 'Job Application'
     });
     return;
   }
@@ -116,7 +117,7 @@ export const handleInteraction = async (
       .join('\n');
     await replyWithEmbed(
       interaction,
-      `Balance: ${shop.balance} Molgium\n\nFixed: Rods + Raises\n\nDaily rotation:\n${rotating || 'No rotation'}`,
+      `Balance: ${shop.balance} Molgium\n\nFixed: Rods + Jobs\n\nDaily rotation:\n${rotating || 'No rotation'}`,
       { title: 'Shop' }
     );
     return;
@@ -432,19 +433,46 @@ export const handleInteraction = async (
     const fetched = await channel.messages.fetch({ limit: amount });
     const now = Date.now();
     const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
-    const deletable = fetched.filter(
-      (message) => !message.pinned && now - message.createdTimestamp < fourteenDaysMs
-    );
-    const skippedPinned = fetched.filter((message) => message.pinned).size;
-    const skippedOld = fetched.filter(
-      (message) => now - message.createdTimestamp >= fourteenDaysMs
-    ).size;
-    const deleted = deletable.size > 0 ? await channel.bulkDelete(deletable, true) : null;
-    const deletedCount = deleted?.size ?? 0;
+    const unpinned = fetched.filter((message) => !message.pinned);
+    const recent = unpinned.filter((message) => now - message.createdTimestamp < fourteenDaysMs);
+    const old = unpinned.filter((message) => now - message.createdTimestamp >= fourteenDaysMs);
+    const skippedPinned = fetched.size - unpinned.size;
+
+    let deletedRecent = 0;
+    let failedRecent = 0;
+    if (recent.size > 0) {
+      try {
+        const deleted = await channel.bulkDelete(recent, true);
+        deletedRecent = deleted.size;
+        failedRecent = Math.max(0, recent.size - deletedRecent);
+      } catch {
+        failedRecent = recent.size;
+      }
+    }
+
+    let deletedOld = 0;
+    let failedOld = 0;
+    const oldMessages = [...old.values()];
+    for (const [index, message] of oldMessages.entries()) {
+      try {
+        await message.delete();
+        deletedOld += 1;
+      } catch {
+        failedOld += 1;
+      }
+      if (index < oldMessages.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, PURGE_OLD_DELETE_DELAY_MS));
+      }
+    }
+
+    const deletedCount = deletedRecent + deletedOld;
+    const failedCount = failedRecent + failedOld;
 
     await editReplyWithEmbed(
       interaction,
-      `Purged ${deletedCount} message(s). Skipped ${skippedPinned} pinned and ${skippedOld} older-than-14-days message(s).`,
+      `Purged ${deletedCount} message(s): ${deletedRecent} recent + ${deletedOld} old. ` +
+        `Skipped ${skippedPinned} pinned.` +
+        `${failedCount > 0 ? ` Failed to delete ${failedCount} message(s).` : ''}`,
       { tone: 'success', title: 'Purge' }
     );
     return;

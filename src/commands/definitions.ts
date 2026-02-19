@@ -14,15 +14,15 @@ type SupportedBuilder =
 export const slashCommandDefinitions: SupportedBuilder[] = [
   new SlashCommandBuilder().setName('work').setDescription('Claim your daily Molgium salary.'),
   new SlashCommandBuilder()
-    .setName('raise')
-    .setDescription('View and buy salary raises.')
-    .addSubcommand((sub) => sub.setName('list').setDescription('List available raises.'))
+    .setName('job')
+    .setDescription('View and apply for jobs that increase your salary.')
+    .addSubcommand((sub) => sub.setName('list').setDescription('List available jobs.'))
     .addSubcommand((sub) =>
       sub
-        .setName('buy')
-        .setDescription('Buy a raise tier.')
+        .setName('apply')
+        .setDescription('Apply for a job by ID.')
         .addIntegerOption((opt) =>
-          opt.setName('id').setDescription('Raise ID to buy').setRequired(true).setMinValue(1)
+          opt.setName('id').setDescription('Job ID to apply for').setRequired(true).setMinValue(1)
         )
     ),
   new SlashCommandBuilder()

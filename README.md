@@ -85,8 +85,8 @@ The bot registers guild commands at startup and ensures `Special Place` exists.
 
 Core:
 - `/work`
-- `/raise list`
-- `/raise buy id:<1|2|3>`
+- `/job list`
+- `/job apply id:<1|2|3>`
 - `/profile`
 - `/profile user:@user` (optional target)
 - `/leaderboard mode:<richest|most_eggs_hatched|most_mythics|top_fish_value>`
@@ -139,7 +139,7 @@ Admin:
 - `/admin give-egg user:@user amount:<n>`
 - `/admin force-event name:<event>`
 - `/admin set-treasury amount:<n>`
-- `/purge amount:<1-100>`
+- `/purge amount:<1-100>` (deletes both recent and old messages; pinned messages are skipped)
 
 ## 5. Daily Rules Implemented
 - Daily reset: `06:00 Europe/Oslo`
