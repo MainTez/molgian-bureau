@@ -47,6 +47,7 @@ import {
   type FishRarity
 } from './domain/gameConfig.js';
 import { canUserWinEgg } from './domain/eggs/scheduling.js';
+import { selectMicroEvent } from './domain/events/microEventSelector.js';
 import { calculateJackpotTax } from './domain/gambling/tax.js';
 import { bumpFishRarity, rollChance, rollFishRarity, rollHatchRarity } from './domain/rolls.js';
 import { db } from './db/client.js';
@@ -1687,8 +1688,6 @@ export class MolgianService {
     'coinflip_chaos'
   ];
 
-  private microEvents: EventName[] = ['pickpocket', 'claim_rush', 'stimulus_drop'];
-
   private startSchedulers(): void {
     this.scheduleMajor();
     this.scheduleMicro();
@@ -1769,7 +1768,7 @@ export class MolgianService {
   }
 
   private async runMicroEvent(): Promise<void> {
-    const name = pickRandom(this.microEvents);
+    const name = selectMicroEvent(this.getTreasury());
     await this.runEvent(name);
   }
 
