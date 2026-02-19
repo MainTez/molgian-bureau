@@ -139,6 +139,7 @@ Admin:
 - `/admin give-egg user:@user amount:<n>`
 - `/admin force-event name:<event>`
 - `/admin set-treasury amount:<n>`
+- `/admin post-citizens-panel` (posts/refreshes the Citizens role button in `#da-rules`)
 - `/purge amount:<1-100>` (deletes both recent and old messages; pinned messages are skipped)
 
 ## 5. Daily Rules Implemented

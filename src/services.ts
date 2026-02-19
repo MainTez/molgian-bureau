@@ -362,7 +362,6 @@ export class MolgianService {
     this.guild = await client.guilds.fetch(GUILD_ID);
     await this.guild.channels.fetch();
     this.eventChannel = await this.ensureEventChannel(this.guild);
-    await this.ensureCitizensOnboarding(this.guild);
     this.seedDefaults();
     this.backfillLegacyCatchNames();
     this.seedEggSpawn();
@@ -408,6 +407,17 @@ export class MolgianService {
           'I could not assign the role. Move the bot role above Citizens in Server Settings > Roles, then try again.'
       };
     }
+  }
+
+  public async adminPostCitizensPanel(): Promise<{ ok: boolean; message: string }> {
+    if (!this.guild) {
+      return { ok: false, message: 'Guild is not ready yet. Try again in a few seconds.' };
+    }
+    await this.ensureCitizensOnboarding(this.guild);
+    return {
+      ok: true,
+      message: `Citizens role panel posted/updated in #${RULES_CHANNEL_NAME}.`
+    };
   }
 
   private currentWindowStart(timestampMs = nowMs()): number {

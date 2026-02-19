@@ -517,6 +517,14 @@ export const handleInteraction = async (
       });
       return;
     }
+    if (sub === 'post-citizens-panel') {
+      const result = await services.game.adminPostCitizensPanel();
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Admin'
+      });
+      return;
+    }
     if (sub === 'force-event') {
       const name = interaction.options.getString('name', true) as
         | 'pickpocket'

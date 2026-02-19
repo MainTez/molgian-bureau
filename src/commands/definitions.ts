@@ -318,6 +318,11 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
           opt.setName('amount').setDescription('Amount').setRequired(true).setMinValue(0)
         )
     )
+    .addSubcommand((sub) =>
+      sub
+        .setName('post-citizens-panel')
+        .setDescription('Post or refresh the Citizens role button panel in #da-rules.')
+    )
 ];
 
 export const commandJson = slashCommandDefinitions.map((command) => command.toJSON());
