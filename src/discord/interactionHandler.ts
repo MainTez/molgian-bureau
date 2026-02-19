@@ -1,7 +1,13 @@
-import { ChannelType, PermissionFlagsBits, type ChatInputCommandInteraction } from 'discord.js';
+import {
+  ChannelType,
+  PermissionFlagsBits,
+  type ButtonInteraction,
+  type ChatInputCommandInteraction
+} from 'discord.js';
 import { appEnv } from '../config/env.js';
 import type { ServiceContainer } from '../services.js';
 import { createBotEmbed, type EmbedTone } from './embeds.js';
+import { CLAIM_CITIZENS_ROLE_BUTTON_ID } from './citizensRole.js';
 
 const formatLeaderboard = (
   rows: Array<{ username: string; value: number; detail?: string }>
@@ -505,4 +511,22 @@ export const handleInteraction = async (
   }
 
   await replyWithEmbed(interaction, 'Command not implemented.', { ephemeral: true, tone: 'warning' });
+};
+
+export const handleButtonInteraction = async (
+  interaction: ButtonInteraction,
+  services: ServiceContainer
+): Promise<void> => {
+  if (interaction.customId !== CLAIM_CITIZENS_ROLE_BUTTON_ID) return;
+  services.game.noteUserActive(interaction.user.id);
+  const result = await services.game.claimCitizensRole(interaction.user.id);
+  await interaction.reply({
+    embeds: [
+      createBotEmbed(result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Citizens Role'
+      })
+    ],
+    ephemeral: true
+  });
 };

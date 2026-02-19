@@ -1,7 +1,7 @@
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { getDiscordEnv } from './config/env.js';
 import { registerCommands } from './discord/registerCommands.js';
-import { handleInteraction } from './discord/interactionHandler.js';
+import { handleButtonInteraction, handleInteraction } from './discord/interactionHandler.js';
 import { runMigrations } from './db/migrate.js';
 import { createServices } from './services.js';
 import { logger } from './utils/logger.js';
@@ -24,17 +24,22 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
   try {
-    await handleInteraction(interaction, services);
+    if (interaction.isChatInputCommand()) {
+      await handleInteraction(interaction, services);
+      return;
+    }
+    if (interaction.isButton()) {
+      await handleButtonInteraction(interaction, services);
+    }
   } catch (error) {
     logger.error('Interaction failed', { error: String(error) });
-    if (!interaction.replied && !interaction.deferred) {
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction.reply({
         embeds: [createBotEmbed('Command failed. Check logs.', { tone: 'error', title: 'Error' })],
         ephemeral: true
       });
-    } else if (interaction.deferred) {
+    } else if (interaction.isRepliable() && interaction.deferred) {
       await interaction.editReply({
         embeds: [createBotEmbed('Command failed. Check logs.', { tone: 'error', title: 'Error' })]
       });

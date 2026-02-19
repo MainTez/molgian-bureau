@@ -151,10 +151,13 @@ Admin:
 - No trading
 - One active pet per user
 - No back-to-back egg-event wins by same user
+- Egg events use interactive formats (buttons/reaction/duel/memory/speed), with no math quiz flow
 - Slash replies and event announcements use styled embeds for consistent UI
 - Common duplicate pets shard for `0.5` shards
 - Faster live events: micro every ~20-40 minutes, major every ~1-2 hours (max 3 major/day)
 - Micro events are treasury-aware: when Treasury is empty, bot auto-runs refill-safe events (`tax_audit`/`pickpocket`) instead of dead payout events.
+- Event pings mention `@Citizens` role only (not `@everyone`)
+- On startup, bot maintains a `#da-rules` panel with a button users can click to self-assign `Citizens`
 
 ## 6. Tests
 

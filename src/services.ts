@@ -5,9 +5,11 @@ import {
   ChannelType,
   Client,
   ComponentType,
+  type MessageCreateOptions,
   type Guild,
   type GuildMember,
   type Message,
+  type Role,
   type TextChannel
 } from 'discord.js';
 import { and, asc, desc, eq, gte, isNull, like, or, sql } from 'drizzle-orm';
@@ -81,6 +83,11 @@ import { logger } from './utils/logger.js';
 import { pickRandom, shuffle, weightedPick } from './utils/random.js';
 import { getWorkWindowStart, isSameWorkWindow, nowMs, randomIntInclusive, toDayKey } from './utils/time.js';
 import { createBotEmbed } from './discord/embeds.js';
+import {
+  CITIZENS_ROLE_NAME,
+  createCitizensRolePanelPayload,
+  RULES_CHANNEL_NAME
+} from './discord/citizensRole.js';
 
 const rarityRank: Record<Rarity, number> = {
   Common: 1,
@@ -335,6 +342,8 @@ export class MolgianService {
 
   private eventChannel: TextChannel | null = null;
 
+  private citizensRoleId: string | null = null;
+
   private activeUsers = new Map<string, number>();
 
   private activeEggState: ActiveEggState | null = null;
@@ -353,6 +362,7 @@ export class MolgianService {
     this.guild = await client.guilds.fetch(GUILD_ID);
     await this.guild.channels.fetch();
     this.eventChannel = await this.ensureEventChannel(this.guild);
+    await this.ensureCitizensOnboarding(this.guild);
     this.seedDefaults();
     this.backfillLegacyCatchNames();
     this.seedEggSpawn();
@@ -372,6 +382,32 @@ export class MolgianService {
 
   public noteUserActive(discordId: string): void {
     this.activeUsers.set(discordId, nowMs());
+  }
+
+  public async claimCitizensRole(discordId: string): Promise<{ ok: boolean; message: string }> {
+    if (!this.guild) {
+      return { ok: false, message: 'Guild is not ready yet. Try again in a few seconds.' };
+    }
+    this.noteUserActive(discordId);
+    const member = await this.guild.members.fetch(discordId).catch(() => null);
+    if (!member) {
+      return { ok: false, message: 'Could not find your server member record.' };
+    }
+    const role = await this.ensureCitizensRole(this.guild);
+    if (member.roles.cache.has(role.id)) {
+      return { ok: true, message: `You already have ${role}.` };
+    }
+    try {
+      await member.roles.add(role);
+      return { ok: true, message: `Role granted: ${role}. Welcome!` };
+    } catch (error) {
+      logger.error('Failed to grant Citizens role', { error: String(error), discordId, roleId: role.id });
+      return {
+        ok: false,
+        message:
+          'I could not assign the role. Move the bot role above Citizens in Server Settings > Roles, then try again.'
+      };
+    }
   }
 
   private currentWindowStart(timestampMs = nowMs()): number {
@@ -458,6 +494,82 @@ export class MolgianService {
       return existing as TextChannel;
     }
     return guild.channels.create({ name: targetName, type: ChannelType.GuildText });
+  }
+
+  private async ensureRulesChannel(guild: Guild): Promise<TextChannel> {
+    const targetName = normalizeChannelName(RULES_CHANNEL_NAME);
+    const existing = guild.channels.cache.find(
+      (channel) =>
+        channel.type === ChannelType.GuildText &&
+        normalizeChannelName(channel.name) === targetName
+    );
+    if (existing && existing.isTextBased() && !existing.isDMBased()) {
+      return existing as TextChannel;
+    }
+    return guild.channels.create({ name: targetName, type: ChannelType.GuildText });
+  }
+
+  private findRoleByNormalizedName(guild: Guild, roleName: string): Role | null {
+    const targetName = normalizeChannelName(roleName);
+    return guild.roles.cache.find((role) => normalizeChannelName(role.name) === targetName) ?? null;
+  }
+
+  private async ensureCitizensRole(guild: Guild): Promise<Role> {
+    const roleIdFromState = this.getState('citizens:role_id');
+    const knownRoleId = this.citizensRoleId ?? roleIdFromState;
+    const existingByState = knownRoleId ? guild.roles.cache.get(knownRoleId) : null;
+    if (existingByState) {
+      this.citizensRoleId = existingByState.id;
+      this.setState('citizens:role_id', existingByState.id);
+      return existingByState;
+    }
+    const existingByName = this.findRoleByNormalizedName(guild, CITIZENS_ROLE_NAME);
+    if (existingByName) {
+      this.citizensRoleId = existingByName.id;
+      this.setState('citizens:role_id', existingByName.id);
+      return existingByName;
+    }
+    const created = await guild.roles.create({
+      name: CITIZENS_ROLE_NAME,
+      mentionable: true,
+      reason: 'Molgian Bureau onboarding role'
+    });
+    this.citizensRoleId = created.id;
+    this.setState('citizens:role_id', created.id);
+    return created;
+  }
+
+  private async ensureCitizensOnboarding(guild: Guild): Promise<void> {
+    const role = await this.ensureCitizensRole(guild);
+    const rulesChannel = await this.ensureRulesChannel(guild);
+    const panelPayload = createCitizensRolePanelPayload(role);
+    const panelChannelId = this.getState('citizens:panel_channel_id');
+    const panelMessageId = this.getState('citizens:panel_message_id');
+
+    let panelMessage: Message | null = null;
+    if (panelMessageId && panelChannelId === rulesChannel.id) {
+      panelMessage = await rulesChannel.messages.fetch(panelMessageId).catch(() => null);
+    }
+    if (!panelMessage) {
+      const recent = await rulesChannel.messages.fetch({ limit: 30 }).catch(() => null);
+      panelMessage =
+        recent?.find(
+          (message) =>
+            message.author.id === this.client?.user?.id &&
+            message.embeds.some((embed) => embed.title === 'Welcome To Molgarians')
+        ) ?? null;
+    }
+
+    if (panelMessage) {
+      await panelMessage.edit(panelPayload);
+      this.setState('citizens:panel_channel_id', rulesChannel.id);
+      this.setState('citizens:panel_message_id', panelMessage.id);
+      return;
+    }
+
+    const createdPanel = await rulesChannel.send(panelPayload);
+    this.setState('citizens:panel_channel_id', rulesChannel.id);
+    this.setState('citizens:panel_message_id', createdPanel.id);
   }
 
   private async ensureHofChannel(): Promise<TextChannel | null> {
@@ -1746,6 +1858,15 @@ export class MolgianService {
     return createBotEmbed(content, { tone: 'event', title });
   }
 
+  private eventPingMention(): Pick<MessageCreateOptions, 'content' | 'allowedMentions'> {
+    const roleId = this.citizensRoleId ?? this.getState('citizens:role_id');
+    if (!roleId) return {};
+    return {
+      content: `<@&${roleId}>`,
+      allowedMentions: { roles: [roleId] }
+    };
+  }
+
   private async sendEventMessage(content: string, title = 'Special Place'): Promise<void> {
     if (!this.eventChannel) return;
     await this.eventChannel.send({ embeds: [this.eventEmbed(content, title)] });
@@ -1754,9 +1875,8 @@ export class MolgianService {
   private async sendEventPing(content: string, title = 'Special Place'): Promise<void> {
     if (!this.eventChannel) return;
     await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [this.eventEmbed(content, title)],
-      allowedMentions: { parse: ['everyone'] }
     });
   }
 
@@ -2055,11 +2175,10 @@ export class MolgianService {
     if (!this.eventChannel) return;
     const phrase = pickRandom(speedTypePrompts);
     await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [
         this.eventEmbed(`Egg Event [Speed Type]: type exactly:\n\`${phrase}\`${forced ? ' (forced)' : ''}`, 'Egg Event')
       ],
-      allowedMentions: { parse: ['everyone'] }
     });
     const winner = await new Promise<Message | null>((resolve) => {
       const collector = this.eventChannel!.createMessageCollector({
@@ -2100,14 +2219,13 @@ export class MolgianService {
       )
     );
     const message = await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [
         this.eventEmbed(
           `Egg Event [Reaction Lock]: press the correct lock within 2 minutes.${forced ? ' (forced)' : ''}`,
           'Egg Event'
         )
       ],
-      allowedMentions: { parse: ['everyone'] },
       components: [row]
     });
     const winnerDiscordId = await new Promise<string | null>((resolve) => {
@@ -2161,14 +2279,13 @@ export class MolgianService {
     const position = randomIntInclusive(1, 4);
     const answer = sequence[position - 1]!;
     const message = await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [
         this.eventEmbed(
           `Egg Event [Emoji Memory]: memorize for 5 seconds\n${sequence.join(' ')}${forced ? ' (forced)' : ''}`,
           'Egg Event'
         )
       ],
-      allowedMentions: { parse: ['everyone'] }
     });
     await sleep(5_000);
     await message.edit({
@@ -2212,14 +2329,13 @@ export class MolgianService {
       )
     );
     const message = await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [
         this.eventEmbed(
           `Egg Event [Rapid Choice]: press the correct button in 2 minutes.${forced ? ' (forced)' : ''}`,
           'Egg Event'
         )
       ],
-      allowedMentions: { parse: ['everyone'] },
       components: [row]
     });
     const winnerDiscordId = await new Promise<string | null>((resolve) => {
@@ -2292,14 +2408,13 @@ export class MolgianService {
       new ButtonBuilder().setCustomId('egg_duel').setLabel('DUEL').setStyle(ButtonStyle.Danger)
     );
     const message = await this.eventChannel.send({
-      content: '@everyone',
+      ...this.eventPingMention(),
       embeds: [
         this.eventEmbed(
           `Egg Event [Quick Duel]: ${duelists.map((m) => `<@${m.id}>`).join(' vs ')}${forced ? ' (forced)' : ''}`,
           'Egg Event'
         )
       ],
-      allowedMentions: { parse: ['everyone'] },
       components: [row]
     });
     const winnerDiscordId = await new Promise<string | null>((resolve) => {
