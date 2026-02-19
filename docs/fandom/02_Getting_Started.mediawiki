@@ -1,0 +1,43 @@
+{{DISPLAYTITLE:Getting Started}}
+__TOC__
+
+This page is a quick path from new user to active player.
+
+== 1) Join the server ==
+If onboarding is enabled, go to '''Immigration-Center''' and click the button to claim the '''Citizens''' role.
+
+== 2) Claim your daily salary ==
+Use:
+* <code>/work</code>
+
+You can do this once per daily reset window (resets at 06:00 Europe/Oslo).
+
+== 3) Check your current job options ==
+Use:
+* <code>/job list</code>
+
+Apply for upgrades with:
+* <code>/job apply id:&lt;number&gt;</code>
+
+== 4) Start fishing ==
+Use:
+* <code>/rod shop</code>
+* <code>/rod buy tier:starter</code>
+* <code>/rod equip tier:starter</code>
+* <code>/fish cast</code>
+* <code>/fish sell catch_id:last</code>
+
+== 5) Watch egg events ==
+Egg mini-games are announced in '''Special Place'''.  
+Win mini-games to earn eggs, then hatch with:
+* <code>/hatch</code>
+
+== 6) Track your progress ==
+Use:
+* <code>/profile</code>
+* <code>/leaderboard mode:richest</code>
+* <code>/leaderboard mode:top_fish_value</code>
+
+[[Category:Molgian Bureau]]
+[[Category:Guides]]
+

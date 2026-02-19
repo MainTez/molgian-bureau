@@ -1,0 +1,61 @@
+{{DISPLAYTITLE:Eggs and Hatching}}
+__TOC__
+
+Eggs are earned through server events and hatched manually.
+
+== Egg Rules ==
+* No egg buying
+* Egg wins come from mini-games in Special Place
+* Daily egg target: 6 wins server-wide
+* If no winner: event expires and is rescheduled
+* Same user cannot win egg events back-to-back
+
+== Egg Event Window ==
+* Active window: 2 minutes
+* Failed event reschedule: 30 to 90 minutes
+
+== Egg Mini-Games ==
+* Speed Type (type exact phrase first)
+* Reaction Lock (find correct button first)
+* Emoji Memory (remember sequence and answer)
+* Rapid Choice (A/B/C first correct)
+* Quick Duel (two selected users duel by button)
+
+== Hatching ==
+Command:
+* <code>/hatch egg_type:&lt;normal|mythic&gt;</code>
+
+Hatch uses suspense roll output in chat.
+
+== Normal Egg Rarity Rates ==
+{| class="wikitable"
+! Rarity !! Rate
+|-
+| Common || 75%
+|-
+| Rare || 18%
+|-
+| Epic || 5%
+|-
+| Legendary || 1.5%
+|-
+| Mythic || 0.5%
+|}
+
+== Mythic Egg Rarity Rates ==
+{| class="wikitable"
+! Rarity !! Rate
+|-
+| Epic || 2%
+|-
+| Legendary || 49%
+|-
+| Mythic || 49%
+|}
+
+== Mythic Hall of Fame ==
+Mythic pet hatches are announced and tracked in Hall of Fame.
+
+[[Category:Molgian Bureau]]
+[[Category:Eggs]]
+

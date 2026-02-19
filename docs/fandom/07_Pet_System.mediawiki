@@ -1,0 +1,114 @@
+{{DISPLAYTITLE:Pet System}}
+__TOC__
+
+Pets are a major progression system with type-based bonuses.
+
+== Pet Types ==
+* Worker
+* Fisher
+* Gambler
+* Event
+
+Only '''one active pet''' can be equipped at a time.
+
+== Commands ==
+* <code>/pets</code>
+* <code>/pet equip pet_instance_id:&lt;id&gt;</code>
+* <code>/pet keep pet_instance_id:&lt;id&gt;</code>
+* <code>/pet shard pet_instance_id:&lt;id&gt;</code>
+* <code>/pet sell pet_instance_id:&lt;id&gt;</code>
+* <code>/pet rarities</code>
+* <code>/shards</code>
+* <code>/forge mythic_egg</code>
+
+== Worker Pet Bonus ==
+Daily work multiplier by pet rarity:
+
+{| class="wikitable"
+! Rarity !! Multiplier
+|-
+| Common || x1.05
+|-
+| Rare || x1.10
+|-
+| Epic || x1.18
+|-
+| Legendary || x1.25
+|-
+| Mythic || x1.40
+|}
+
+== Fisher Pet Bonus ==
+Rarity bump chance and fish sell bonus:
+
+{| class="wikitable"
+! Rarity !! Rarity Bump Chance !! Sell Bonus
+|-
+| Common || 10% || +4%
+|-
+| Rare || 15% || +7%
+|-
+| Epic || 20% || +10%
+|-
+| Legendary || 25% || +14%
+|-
+| Mythic || 30% || +20%
+|}
+
+== Gambler Pet Bonus ==
+Applies only on wins:
+
+{| class="wikitable"
+! Rarity !! Win Bonus
+|-
+| Common || +1%
+|-
+| Rare || +2%
+|-
+| Epic || +3%
+|-
+| Legendary || +4%
+|-
+| Mythic || +6%
+|}
+
+== Event Pet Bonus ==
+If you win an egg mini-game, Event pets add Molgium bonus:
+
+{| class="wikitable"
+! Rarity !! Event Win Bonus
+|-
+| Common || +40
+|-
+| Rare || +65
+|-
+| Epic || +95
+|-
+| Legendary || +145
+|-
+| Mythic || +220
+|}
+
+== Duplicates, Shards, and Sell ==
+Duplicate outcomes support:
+* Keep
+* Shard
+* Sell
+
+Shard values:
+* Common 1 (duplicate common flow can resolve as 0.5 shard increments)
+* Rare 3
+* Epic 10
+* Legendary 30
+* Mythic 100
+
+Sell values:
+* Common 50
+* Rare 150
+* Epic 600
+* Legendary 2500
+* Mythic 10000
+
+[[Category:Molgian Bureau]]
+[[Category:Pets]]
+

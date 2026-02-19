@@ -1,0 +1,131 @@
+{{DISPLAYTITLE:Commands}}
+__TOC__
+
+All commands are slash commands.
+
+== Core ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/work</code> || Claim daily Molgium salary.
+|-
+| <code>/job list</code> || Show job progression options.
+|-
+| <code>/job apply id:&lt;1|2|3&gt;</code> || Apply for a job tier (salary upgrade).
+|-
+| <code>/profile</code> || View your profile.
+|-
+| <code>/profile user:@user</code> || View another user’s profile.
+|-
+| <code>/leaderboard mode:&lt;richest|most_eggs_hatched|most_mythics|top_fish_value&gt;</code> || View leaderboards.
+|}
+
+== Shop and Loadout ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/shop</code> || Show shop and daily rotation.
+|-
+| <code>/shop buy_id:&lt;cosmetic_id&gt;</code> || Buy a rotating cosmetic.
+|-
+| <code>/loadout view</code> || View active loadout.
+|-
+| <code>/loadout set title id:&lt;id&gt;</code> || Set title cosmetic.
+|-
+| <code>/loadout set badge id:&lt;id&gt;</code> || Set badge cosmetic.
+|-
+| <code>/loadout set frame id:&lt;id&gt;</code> || Set frame cosmetic.
+|}
+
+== Fishing ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/rod shop</code> || Show rod tiers and stats.
+|-
+| <code>/rod buy tier:&lt;starter|improved|elite&gt;</code> || Buy a rod.
+|-
+| <code>/rod equip tier:&lt;starter|improved|elite&gt;</code> || Equip owned rod.
+|-
+| <code>/fish cast</code> || Fish once (cooldown applies).
+|-
+| <code>/fish sell catch_id:&lt;id|last|all&gt;</code> || Sell catches.
+|-
+| <code>/fish collection</code> || Show personal fish collection stats.
+|-
+| <code>/fish rarities</code> || Show fish rarity rates and notes.
+|-
+| <code>/fish index</code> || Show fish discovery/index page.
+|}
+
+== Gambling and Treasury ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/gamble coinflip amount:&lt;n&gt;</code> || 50/50 coinflip.
+|-
+| <code>/gamble dice amount:&lt;n&gt;</code> || Dice gamble.
+|-
+| <code>/jackpot enter amount:&lt;n&gt;</code> || Enter jackpot.
+|-
+| <code>/jackpot status</code> || View jackpot pool and entries.
+|-
+| <code>/treasury</code> || View Treasury total.
+|}
+
+== Eggs and Pets ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/hatch egg_type:&lt;normal|mythic&gt;</code> || Hatch an egg.
+|-
+| <code>/pets</code> || List your pet instances.
+|-
+| <code>/pet rarities</code> || Show pet hatch rarity info.
+|-
+| <code>/pet equip pet_instance_id:&lt;id&gt;</code> || Equip one active pet.
+|-
+| <code>/pet keep pet_instance_id:&lt;id&gt;</code> || Keep pending pet.
+|-
+| <code>/pet shard pet_instance_id:&lt;id&gt;</code> || Convert duplicate to shards.
+|-
+| <code>/pet sell pet_instance_id:&lt;id&gt;</code> || Sell pet instance.
+|-
+| <code>/shards</code> || View shard count.
+|-
+| <code>/forge mythic_egg</code> || Craft 1 Mythic Egg for shards.
+|-
+| <code>/hof</code> || View Mythic Hall of Fame.
+|}
+
+== Wiki ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/wiki home</code> || Open wiki home link.
+|-
+| <code>/wiki page title:&lt;name&gt;</code> || Open specific page link.
+|-
+| <code>/wiki search query:&lt;text&gt;</code> || Search wiki link.
+|}
+
+== Moderation/Admin ==
+{| class="wikitable"
+! Command !! Description
+|-
+| <code>/purge amount:&lt;1-100&gt;</code> || Delete recent + old messages (pinned skipped).
+|-
+| <code>/admin give-molgium user:@user amount:&lt;n&gt;</code> || Give currency.
+|-
+| <code>/admin give-egg user:@user amount:&lt;n&gt;</code> || Give eggs.
+|-
+| <code>/admin force-event name:&lt;event&gt;</code> || Trigger event manually.
+|-
+| <code>/admin set-treasury amount:&lt;n&gt;</code> || Set Treasury value.
+|-
+| <code>/admin post-citizens-panel</code> || Post/refresh Citizens role panel in Immigration-Center.
+|}
+
+[[Category:Molgian Bureau]]
+[[Category:Reference]]
+

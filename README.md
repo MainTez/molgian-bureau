@@ -53,6 +53,9 @@ TIMEZONE=Europe/Oslo
 EVENT_CHANNEL_NAME=Special Place
 FANDOM_WIKI_BASE_URL=https://your-wiki-name.fandom.com
 DATABASE_URL=file:./data/molgian-bureau.db
+SQLITE_DATA_DIR=
+DATABASE_BACKUP_DIR=
+ALLOW_UNSAFE_REPO_DB_PATH=false
 NODE_ENV=development
 REGISTER_GLOBAL_COMMANDS=false
 ADMIN_USER_IDS=123456789012345678
@@ -62,6 +65,10 @@ ALLOW_SERVER_ADMINS=false
 `ADMIN_USER_IDS` is a comma-separated allowlist for `/admin` commands.
 Example: `ADMIN_USER_IDS=123...,456...`
 `FANDOM_WIKI_BASE_URL` is your Fandom wiki root URL used by `/wiki`.
+In production, keep SQLite outside the repo:
+- `DATABASE_URL=file:/home/ubuntu/molgian-bureau-data/molgian-bureau.db`
+- `SQLITE_DATA_DIR=/home/ubuntu/molgian-bureau-data`
+- `DATABASE_BACKUP_DIR=/home/ubuntu/molgian-bureau-backups`
 
 ## 3. Install + Run
 
@@ -79,6 +86,39 @@ npm run db:migrate
 npm run dev
 ```
 
+### Production Safe Update (No Progress Wipe)
+Never deploy by copying your local `data/` folder over the VM. Use `git pull` on VM and keep DB outside repo.
+
+One-time VM migration to safe DB location:
+```bash
+pm2 stop molgian-bureau
+mkdir -p /home/ubuntu/molgian-bureau-data /home/ubuntu/molgian-bureau-backups
+cp -n /home/ubuntu/molgian-bureau/data/molgian-bureau.db /home/ubuntu/molgian-bureau-data/molgian-bureau.db
+```
+
+Then set in VM `.env`:
+```env
+DATABASE_URL=file:/home/ubuntu/molgian-bureau-data/molgian-bureau.db
+SQLITE_DATA_DIR=/home/ubuntu/molgian-bureau-data
+DATABASE_BACKUP_DIR=/home/ubuntu/molgian-bureau-backups
+ALLOW_UNSAFE_REPO_DB_PATH=false
+```
+
+Safe deploy flow:
+```bash
+cd ~/molgian-bureau
+git pull --ff-only
+npm ci
+npm run build
+npm run db:migrate
+pm2 restart molgian-bureau
+```
+
+Manual DB backup:
+```bash
+npm run db:backup
+```
+
 The bot registers guild commands at startup and ensures `Special Place` exists.
 
 ## 4. Commands
@@ -92,6 +132,7 @@ Core:
 - `/profile`
 - `/profile user:@user` (optional target)
 - `/leaderboard mode:<richest|most_eggs_hatched|most_mythics|top_fish_value>`
+- `/patchnotes`
 
 Shop/loadout:
 - `/shop`
@@ -158,7 +199,7 @@ Admin:
 - No item durability
 - No trading
 - One active pet per user
-- No back-to-back egg-event wins by same user
+- Same user can win multiple egg events, including back-to-back
 - Egg events use interactive formats (buttons/reaction/duel/memory/speed), with no math quiz flow
 - Slash replies and event announcements use styled embeds for consistent UI
 - Common duplicate pets shard for `0.5` shards
@@ -170,6 +211,7 @@ Admin:
 - Treasury drip: `5%` from fish sell payouts and `5%` from gambling losses
 - Daily and weekly missions are available via `/missions` with shard rewards between `0.1` and `0.5`
 - `/profile` now shows exact active pet passive numbers and current work streak bonus
+- Non-egg events are throttled by a global cooldown to prevent event spam
 
 ## 6. Tests
 
@@ -181,7 +223,7 @@ Includes tests for:
 - Work reset window math
 - Jackpot tax math
 - Treasury flows
-- Egg scheduling + anti back-to-back winner rule
+- Egg scheduling + event reschedule windows
 - Hatch rarity output validity
 
 ## 7. Free Hosting Note

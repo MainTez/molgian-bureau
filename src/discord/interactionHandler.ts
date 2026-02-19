@@ -445,6 +445,11 @@ export const handleInteraction = async (
     return;
   }
 
+  if (interaction.commandName === 'patchnotes') {
+    await replyWithEmbed(interaction, services.game.patchNotesText(), { title: 'Patch Notes' });
+    return;
+  }
+
   if (interaction.commandName === 'hof') {
     const rows = services.game.hof();
     const text =
@@ -608,10 +613,10 @@ export const handleInteraction = async (
         | 'inflation_spike'
         | 'egg_rate_boost'
         | 'fishing_madness'
-        | 'coinflip_chaos'
-        | 'egg_spawn';
+          | 'coinflip_chaos'
+          | 'egg_spawn';
       await interaction.deferReply();
-      await services.game.runEvent(name);
+      await services.game.runEvent(name, { bypassCooldown: true });
       await editReplyWithEmbed(interaction, `Forced event ${name} executed.`, {
         tone: 'success',
         title: 'Admin'

@@ -1,0 +1,33 @@
+{{DISPLAYTITLE:FAQ}}
+__TOC__
+
+== Why can I not use /work again today? ==
+/work is limited to once per reset window. Reset is at 06:00 Europe/Oslo.
+
+== Why did /work give me 0 payout? ==
+There is a small robbery chance that can cancel your daily payout.
+
+== Why can I not fish? ==
+You need an owned and equipped rod:
+* <code>/rod buy tier:starter</code>
+* <code>/rod equip tier:starter</code>
+
+== Why did Claim Rush or Stimulus not pay much? ==
+Those depend on Treasury state. If Treasury is low/empty, payout events can be reduced or replaced by refill-safe events.
+
+== Why did not /purge remove pinned messages? ==
+Pinned messages are intentionally skipped for safety.
+
+== How do I get Citizens role? ==
+Go to Immigration-Center and click the role button panel (posted by admins).
+
+== How do I hatch Mythic pets? ==
+You can hatch from normal eggs (very low odds) or craft Mythic Eggs via shards:
+* <code>/forge mythic_egg</code>
+
+== Can players trade pets or items? ==
+No. Trading is not enabled in launch version.
+
+[[Category:Molgian Bureau]]
+[[Category:FAQ]]
+

@@ -1,0 +1,60 @@
+{{DISPLAYTITLE:Fishing Guide}}
+__TOC__
+
+Fishing is rod-gated and is one of the main economy loops.
+
+== Basics ==
+* You must own and equip a rod
+* Fishing cooldown: '''15 minutes'''
+* Sell single catch, last catch, or all unsold catches
+
+== Rod Tiers ==
+{| class="wikitable"
+! Rod !! Cost !! Trash Weight Multiplier !! Sell Bonus !! Double Sell Chance !! Rarity Bump Chance
+|-
+| Starter Rod || 300 || x1.00 || x1.00 || 0% || 0%
+|-
+| Improved Rod || 2000 || x0.80 || x1.08 || 0% || 3%
+|-
+| Elite Rod || 7500 || x0.65 || x1.12 || 6% || 7%
+|}
+
+== Commands ==
+* <code>/rod shop</code>
+* <code>/rod buy tier:&lt;starter|improved|elite&gt;</code>
+* <code>/rod equip tier:&lt;starter|improved|elite&gt;</code>
+* <code>/fish cast</code>
+* <code>/fish sell catch_id:&lt;id|last|all&gt;</code>
+* <code>/fish collection</code>
+* <code>/fish rarities</code>
+* <code>/fish index</code>
+
+== Enchantments ==
+Enchantments are very rare fish modifiers that adjust fish value.
+
+{| class="wikitable"
+! Enchantment !! Chance !! Value Multiplier
+|-
+| Small || 0.20% || x0.88
+|-
+| Giant || 0.18% || x1.75
+|-
+| Gold || 0.08% || x2.40
+|-
+| Neon || 0.055% || x3.10
+|-
+| Rainbow || 0.035% || x3.90
+|-
+| Voidtouched || 0.02% || x4.80
+|-
+| Crowned || 0.012% || x6.50
+|}
+
+== Fisher Pet Synergy ==
+If your active pet is type '''Fisher''':
+* catch rarity bump chance can increase
+* fish sale payout gets an extra deterministic bonus
+
+[[Category:Molgian Bureau]]
+[[Category:Fishing]]
+

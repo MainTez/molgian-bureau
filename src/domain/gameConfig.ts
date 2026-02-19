@@ -210,6 +210,7 @@ export const MAJOR_EVENT_MAX_MS = 2 * 60 * 60 * 1000;
 export const MICRO_EVENT_MIN_MS = 20 * 60 * 1000;
 export const MICRO_EVENT_MAX_MS = 40 * 60 * 1000;
 export const MAJOR_EVENT_DAILY_CAP = 3;
+export const EVENT_GLOBAL_COOLDOWN_MS = 5 * 60 * 1000;
 
 export const DAILY_EGG_TARGET = 6;
 

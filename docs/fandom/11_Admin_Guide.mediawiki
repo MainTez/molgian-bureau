@@ -1,0 +1,41 @@
+{{DISPLAYTITLE:Admin Guide}}
+__TOC__
+
+Staff/admin operational controls.
+
+== Admin Commands ==
+{| class="wikitable"
+! Command !! Purpose
+|-
+| <code>/admin give-molgium user:@user amount:&lt;n&gt;</code> || Grant currency
+|-
+| <code>/admin give-egg user:@user amount:&lt;n&gt;</code> || Grant eggs
+|-
+| <code>/admin force-event name:&lt;event&gt;</code> || Trigger a specific event
+|-
+| <code>/admin set-treasury amount:&lt;n&gt;</code> || Set Treasury amount
+|-
+| <code>/admin post-citizens-panel</code> || Post/refresh Citizens role panel in Immigration-Center
+|}
+
+== Purge ==
+Command:
+* <code>/purge amount:&lt;1-100&gt;</code>
+
+Behavior:
+* Deletes recent and old messages
+* Skips pinned messages
+* Reports deleted/skipped/failed counts
+
+== Citizens Role Panel ==
+1. Run <code>/admin post-citizens-panel</code>
+2. Bot posts or refreshes the role button in '''Immigration-Center'''
+3. Users click the button to get the '''Citizens''' role
+
+== Required Setup ==
+* Bot role must be above '''Citizens''' in role hierarchy for role assignment to succeed.
+* Keep admin access restricted with bot allowlist policy.
+
+[[Category:Molgian Bureau]]
+[[Category:Admin]]
+

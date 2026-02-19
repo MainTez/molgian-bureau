@@ -1,0 +1,36 @@
+{{DISPLAYTITLE:Fish Rarities}}
+__TOC__
+
+Base fish rarity distribution before modifiers:
+
+{| class="wikitable"
+! Catch Tier !! Base Rate
+|-
+| Trash Catch || 38.0%
+|-
+| Common Catch || 39.0%
+|-
+| Rare Catch || 16.0%
+|-
+| Epic Catch || 5.0%
+|-
+| Legendary Catch || 1.7%
+|-
+| Mythic Catch || 0.3%
+|}
+
+== Important Notes ==
+* These are '''base''' rates.
+* Final outcomes are affected by:
+* rod tier stats
+* rod rarity bump chance
+* active Fisher pet bonuses
+* active event boosts (example: Fishing Madness)
+
+== Seasonal Fish ==
+Fish pool supports seasonal entries by month, while rarity logic remains in the same core system.
+
+[[Category:Molgian Bureau]]
+[[Category:Fishing]]
+[[Category:Reference]]
+

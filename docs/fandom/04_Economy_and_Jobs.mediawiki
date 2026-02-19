@@ -1,0 +1,44 @@
+{{DISPLAYTITLE:Economy and Jobs}}
+__TOC__
+
+The Molgian Bureau economy is based on '''Molgium'''.
+
+== Currency Sources ==
+* <code>/work</code> daily salary
+* Fishing catches sold via <code>/fish sell</code>
+* Gambling wins
+* Event rewards
+* Admin grants (staff only)
+
+== Daily Work ==
+* Command: <code>/work</code>
+* Reset: '''06:00 Europe/Oslo'''
+* Once per reset window
+* 1% robbery chance can cancel the day’s work payout
+
+== Job Progression ==
+Use:
+* <code>/job list</code>
+* <code>/job apply id:&lt;n&gt;</code>
+
+Jobs are applied in order and permanently raise SalaryBase.
+
+{| class="wikitable"
+! Job ID !! Apply Cost !! New SalaryBase
+|-
+| 1 || 10000 Molgium || 250
+|-
+| 2 || 30000 Molgium || 500
+|-
+| 3 || 75000 Molgium || 900
+|}
+
+== Economy Rules ==
+* No negative balances
+* No trading system in launch era
+* Treasury supports event payouts and tax flows
+* High jackpot payouts may trigger tax into Treasury
+
+[[Category:Molgian Bureau]]
+[[Category:Economy]]
+

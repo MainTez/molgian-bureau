@@ -1,0 +1,40 @@
+{{DISPLAYTITLE:Events and Chaos}}
+__TOC__
+
+Molgian Bureau runs scheduled chaos events.
+
+== Event Schedule ==
+* Micro events: roughly every 20 to 40 minutes
+* Major events: roughly every 1 to 2 hours
+* Major daily cap: 3
+
+== Announcements ==
+* Event channel: '''Special Place'''
+* Event pings target the '''Citizens''' role
+
+== Micro Events ==
+* Pickpocket
+* Claim Rush
+* Stimulus Drop
+
+Treasury-aware behavior:
+* If Treasury is low/empty, refill-safe events are prioritized so event flow does not stall.
+
+== Major Events ==
+* Tax Audit
+* Inflation Spike
+* Egg Rate Boost
+* Fishing Madness
+* Coinflip Chaos
+
+== Event Impact ==
+Events can affect:
+* wallet balances
+* work payout multipliers
+* fishing outcomes
+* hatch quality
+* server-wide pacing and competition
+
+[[Category:Molgian Bureau]]
+[[Category:Events]]
+

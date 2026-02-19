@@ -21,6 +21,7 @@ import {
   EGG_EVENT_WINDOW_MS,
   EGG_RESCHEDULE_MAX_MS,
   EGG_RESCHEDULE_MIN_MS,
+  EVENT_GLOBAL_COOLDOWN_MS,
   FISH_RARITY_BASE_WEIGHTS,
   FISH_BASE_VALUES,
   FISH_COOLDOWN_MS,
@@ -52,7 +53,6 @@ import {
   WORK_STREAK_BONUS_PER_DAY,
   type FishRarity
 } from './domain/gameConfig.js';
-import { canUserWinEgg } from './domain/eggs/scheduling.js';
 import { selectMicroEvent } from './domain/events/microEventSelector.js';
 import { calculateJackpotTax } from './domain/gambling/tax.js';
 import { bumpFishRarity, rollChance, rollFishRarity, rollHatchRarity } from './domain/rolls.js';
@@ -669,8 +669,37 @@ export class MolgianService {
   private async ensureUser(discordId: string, username: string): Promise<typeof users.$inferSelect> {
     const existing = db.select().from(users).where(eq(users.discordId, discordId)).get();
     if (existing) {
-      if (existing.username !== username) {
-        db.update(users).set({ username, updatedAt: nowMs() }).where(eq(users.id, existing.id)).run();
+      if (existing.username !== username || existing.salaryBase < 150) {
+        db.update(users)
+          .set({
+            username,
+            salaryBase: existing.salaryBase < 150 ? 150 : existing.salaryBase,
+            updatedAt: nowMs()
+          })
+          .where(eq(users.id, existing.id))
+          .run();
+      }
+      const wallet = db.select().from(balances).where(eq(balances.userId, existing.id)).get();
+      if (!wallet) {
+        db.insert(balances).values({ userId: existing.id, amount: 0 }).run();
+      }
+      const eggs = db.select().from(eggsInventory).where(eq(eggsInventory.userId, existing.id)).get();
+      if (!eggs) {
+        db.insert(eggsInventory).values({ userId: existing.id, eggs: 0, mythicEggs: 0, lastWinAt: null }).run();
+      }
+      const shardRow = db.select().from(shards).where(eq(shards.userId, existing.id)).get();
+      if (!shardRow) {
+        db.insert(shards).values({ userId: existing.id, amount: 0 }).run();
+      }
+      const loadoutRow = db.select().from(loadout).where(eq(loadout.userId, existing.id)).get();
+      if (!loadoutRow) {
+        db.insert(loadout)
+          .values({ userId: existing.id, titleId: null, badgeId: null, frameId: null, updatedAt: nowMs() })
+          .run();
+      }
+      const activePetRow = db.select().from(activePet).where(eq(activePet.userId, existing.id)).get();
+      if (!activePetRow) {
+        db.insert(activePet).values({ userId: existing.id, petInstanceId: null, equippedAt: null }).run();
       }
       return existing;
     }
@@ -2296,7 +2325,53 @@ export class MolgianService {
     await this.runEvent(name);
   }
 
-  public async runEvent(name: EventName): Promise<void> {
+  private shouldThrottleEvent(name: EventName, bypassCooldown: boolean): boolean {
+    if (bypassCooldown) return false;
+    if (name === 'egg_spawn') return false;
+    const lastEventAt = this.getStateNumber('events:last_started_at') ?? 0;
+    return nowMs() - lastEventAt < EVENT_GLOBAL_COOLDOWN_MS;
+  }
+
+  public patchNotesText(): string {
+    return [
+      'Molgian Bureau - Patch Notes',
+      '============================',
+      '',
+      '- Economy:',
+      '  - Base salary is now 150 Molgium.',
+      '  - Job costs updated to 500 / 1000 / 2000.',
+      '  - Work streak bonus added: +3% per day (cap +30%).',
+      '',
+      '- Fishing and Hall of Fame:',
+      '  - Added God fish tier from rod-only Mythic bump.',
+      '  - Hall of Fame now tracks Mythic pet hatches + Mythic/God fish catches.',
+      '',
+      '- Events and Treasury:',
+      '  - Added global anti-spam cooldown between non-egg events.',
+      '  - Treasury drip added: +5% from fish sells and +5% from gamble losses.',
+      '',
+      '- Missions:',
+      '  - Added daily and weekly missions.',
+      '  - Mission rewards are random 0.1 to 0.5 shards.',
+      '  - New commands: /missions view and /missions claim.',
+      '',
+      '- Profiles:',
+      '  - /profile now shows exact active pet passive values.',
+      '',
+      '- Reliability:',
+      '  - Bot now auto-recreates missing core rows for existing users.',
+      '  - Added SQLite backup flow and safer production DB handling.',
+      '',
+      'Tip: use /patchnotes anytime to view this summary.'
+    ].join('\n');
+  }
+
+  public async runEvent(name: EventName, options?: { bypassCooldown?: boolean }): Promise<void> {
+    if (this.shouldThrottleEvent(name, options?.bypassCooldown ?? false)) {
+      logger.info('Event throttled', { event: name });
+      return;
+    }
+    this.setState('events:last_started_at', String(nowMs()));
     const run = db
       .insert(eventRuns)
       .values({
@@ -2531,10 +2606,6 @@ export class MolgianService {
   }
 
   private async awardEggWinner(discordId: string, username: string, runId: number): Promise<void> {
-    const lastWinnerDiscordId = this.getState('egg:last_winner_discord_id');
-    if (!canUserWinEgg(lastWinnerDiscordId, discordId)) {
-      throw new Error('No back-to-back egg wins allowed.');
-    }
     const user = await this.ensureUser(discordId, username);
     db.transaction((tx) => {
       const eggRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
@@ -2550,7 +2621,6 @@ export class MolgianService {
       eventBonus = PET_EVENT_BONUS[active.rarity];
       this.changeBalance(user.id, eventBonus);
     }
-    this.setState('egg:last_winner_discord_id', discordId);
     this.finishEggRun(runId, user.id, { winnerDiscordId: discordId, eventBonus });
     this.scheduleNextEgg(true);
     await this.sendEventMessage(
@@ -2592,10 +2662,6 @@ export class MolgianService {
       let resolved = false;
       collector.on('collect', async (message) => {
         if (resolved) return;
-        if (!canUserWinEgg(this.getState('egg:last_winner_discord_id'), message.author.id)) {
-          await this.sendEventMessage(`${message.author.username} cannot win back-to-back Egg events.`, 'Egg Event');
-          return;
-        }
         resolved = true;
         resolve(message);
         collector.stop('winner');
@@ -2643,13 +2709,6 @@ export class MolgianService {
         if (interaction.customId !== `egg_lock_${correct}`) {
           await interaction.reply({
             embeds: [createBotEmbed('Wrong lock.', { tone: 'warning', title: 'Egg Event' })],
-            ephemeral: true
-          });
-          return;
-        }
-        if (!canUserWinEgg(this.getState('egg:last_winner_discord_id'), interaction.user.id)) {
-          await interaction.reply({
-            embeds: [createBotEmbed('No back-to-back egg wins allowed.', { tone: 'warning', title: 'Egg Event' })],
             ephemeral: true
           });
           return;
@@ -2703,10 +2762,6 @@ export class MolgianService {
       let found = false;
       collector.on('collect', async (msg) => {
         if (found) return;
-        if (!canUserWinEgg(this.getState('egg:last_winner_discord_id'), msg.author.id)) {
-          await this.sendEventMessage(`${msg.author.username} cannot win back-to-back.`, 'Egg Event');
-          return;
-        }
         found = true;
         resolve(msg);
         collector.stop('winner');
@@ -2754,13 +2809,6 @@ export class MolgianService {
         if (pick !== correct) {
           await interaction.reply({
             embeds: [createBotEmbed('Wrong choice.', { tone: 'warning', title: 'Egg Event' })],
-            ephemeral: true
-          });
-          return;
-        }
-        if (!canUserWinEgg(this.getState('egg:last_winner_discord_id'), interaction.user.id)) {
-          await interaction.reply({
-            embeds: [createBotEmbed('No back-to-back wins.', { tone: 'warning', title: 'Egg Event' })],
             ephemeral: true
           });
           return;
@@ -2832,13 +2880,6 @@ export class MolgianService {
         if (!duelistsSet.has(interaction.user.id)) {
           await interaction.reply({
             embeds: [createBotEmbed('Not your duel.', { tone: 'warning', title: 'Egg Event' })],
-            ephemeral: true
-          });
-          return;
-        }
-        if (!canUserWinEgg(this.getState('egg:last_winner_discord_id'), interaction.user.id)) {
-          await interaction.reply({
-            embeds: [createBotEmbed('No back-to-back wins.', { tone: 'warning', title: 'Egg Event' })],
             ephemeral: true
           });
           return;

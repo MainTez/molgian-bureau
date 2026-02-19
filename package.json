@@ -10,6 +10,7 @@
     "lint": "eslint . --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "db:backup": "tsx src/db/backupCli.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "commands:register": "tsx src/discord/registerCommandsCli.ts"

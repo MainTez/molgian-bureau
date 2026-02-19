@@ -1,0 +1,34 @@
+{{DISPLAYTITLE:Treasury and Gambling}}
+__TOC__
+
+Treasury is the central pool used for event payouts and tax sinks.
+
+== Commands ==
+* <code>/gamble coinflip amount:&lt;n&gt;</code>
+* <code>/gamble dice amount:&lt;n&gt;</code>
+* <code>/jackpot enter amount:&lt;n&gt;</code>
+* <code>/jackpot status</code>
+* <code>/treasury</code>
+
+== Jackpot Rules ==
+* Weighted by contribution
+* Single-user effective contribution cap applies
+* Jackpot rounds resolve on cooldown
+* Larger jackpot payouts can trigger Treasury tax
+
+== Tax Flow ==
+Jackpot tax defaults:
+* Threshold: 2000
+* Tax rate: 8%
+
+Collected tax goes into Treasury and helps fund live event payouts.
+
+== Safety Rules ==
+* No real-money mechanics
+* No forced wallet deletion
+* No trading-based exploit loops in launch version
+
+[[Category:Molgian Bureau]]
+[[Category:Economy]]
+[[Category:Gambling]]
+

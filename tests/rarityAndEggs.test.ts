@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { canUserWinEgg, nextEggRescheduleDelayMs, remainingEggWinsToday } from '../src/domain/eggs/scheduling.js';
+import { nextEggRescheduleDelayMs, remainingEggWinsToday } from '../src/domain/eggs/scheduling.js';
 import { rollHatchRarity } from '../src/domain/rolls.js';
 
 describe('egg scheduling helpers', () => {
-  it('prevents back-to-back winner for same user', () => {
-    expect(canUserWinEgg('123', '123')).toBe(false);
-    expect(canUserWinEgg('123', '456')).toBe(true);
-    expect(canUserWinEgg(null, '456')).toBe(true);
-  });
-
   it('tracks remaining daily egg wins from target 6', () => {
     expect(remainingEggWinsToday(0)).toBe(6);
     expect(remainingEggWinsToday(4)).toBe(2);

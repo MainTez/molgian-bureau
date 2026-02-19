@@ -9,7 +9,7 @@ import { createBotEmbed } from './discord/embeds.js';
 
 const { DISCORD_TOKEN } = getDiscordEnv();
 
-runMigrations();
+await runMigrations();
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]

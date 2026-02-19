@@ -243,6 +243,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
           { name: 'top_fish_value', value: 'top_fish_value' }
         )
     ),
+  new SlashCommandBuilder().setName('patchnotes').setDescription('View recent bot updates.'),
   new SlashCommandBuilder().setName('hof').setDescription('View Hall of Fame history.'),
   new SlashCommandBuilder()
     .setName('wiki')

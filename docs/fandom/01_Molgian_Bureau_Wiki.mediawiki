@@ -1,0 +1,55 @@
+{{DISPLAYTITLE:Molgian Bureau Wiki}}
+__TOC__
+
+Welcome to the '''official wiki for Molgian Bureau''', the economy + gacha + chaos Discord bot used in the Molgarians server.
+
+== Quick Facts ==
+{| class="wikitable"
+! Topic !! Value
+|-
+| Bot Name || Molgian Bureau
+|-
+| Main Currency || Molgium
+|-
+| Main Event Channel || Special Place
+|-
+| Citizens Onboarding Channel || Immigration-Center
+|-
+| Daily Reset || 06:00 (Europe/Oslo)
+|-
+| Work Command || <code>/work</code> (once per reset window)
+|-
+| Fishing Cooldown || 15 minutes per user
+|-
+| Egg Target || 6 egg wins per day (server-wide target)
+|}
+
+== Core Systems ==
+* Economy and daily work
+* Job progression (salary upgrades)
+* Rod-gated fishing and fish economy
+* Gambling, jackpot, and Treasury flow
+* Egg mini-games and pet hatching
+* Timed chaos events
+
+== Start Here ==
+* [[Getting Started]]
+* [[Commands]]
+* [[Economy and Jobs]]
+* [[Fishing Guide]]
+* [[Fish Rarities]]
+* [[Pet System]]
+* [[Eggs and Hatching]]
+* [[Events and Chaos]]
+* [[Treasury and Gambling]]
+* [[Admin Guide]]
+* [[FAQ]]
+
+== Notes ==
+* Event pings target the '''Citizens''' role.
+* Admins post/update the Citizens role panel with <code>/admin post-citizens-panel</code>.
+* No trading system in launch version.
+
+[[Category:Molgian Bureau]]
+[[Category:Main Page]]
+
