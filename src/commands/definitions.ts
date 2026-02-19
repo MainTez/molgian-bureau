@@ -109,6 +109,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
         )
     )
     .addSubcommand((sub) => sub.setName('collection').setDescription('View your fish collection.'))
+    .addSubcommand((sub) => sub.setName('value').setDescription('View unsold fish inventory value.'))
     .addSubcommand((sub) => sub.setName('rarities').setDescription('View fish rarity guide.'))
     .addSubcommand((sub) => sub.setName('index').setDescription('View the server fish index book.')),
   new SlashCommandBuilder()

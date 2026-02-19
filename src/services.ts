@@ -1301,6 +1301,65 @@ export class MolgianService {
     return { entries, unsold };
   }
 
+  public async fishValueView(discordId: string, username: string): Promise<{
+    unsold: number;
+    baseTotal: number;
+    fisherBonus: number;
+    estimatedTotal: number;
+    entries: Array<{ name: string; rarity: FishRarity; count: number; totalValue: number }>;
+  }> {
+    const user = await this.ensureUser(discordId, username);
+    const active = await this.getActivePet(user.id);
+    const rows = db
+      .select({
+        fishKey: fishCatches.fishKey,
+        rarity: fishCatches.rarity,
+        caughtName: fishCatches.caughtName,
+        finalValue: fishCatches.finalValue
+      })
+      .from(fishCatches)
+      .where(and(eq(fishCatches.userId, user.id), isNull(fishCatches.soldAt)))
+      .all();
+
+    if (rows.length === 0) {
+      return { unsold: 0, baseTotal: 0, fisherBonus: 0, estimatedTotal: 0, entries: [] };
+    }
+
+    const fisherBonusRate = active?.petType === 'Fisher' ? PET_FISHER_SELL_BONUS[active.rarity] : 0;
+    const byName = new Map<string, { name: string; rarity: FishRarity; count: number; totalValue: number }>();
+    let baseTotal = 0;
+    let fisherBonus = 0;
+
+    for (const row of rows) {
+      const resolved = resolveFishInfo(row.fishKey, row.rarity);
+      const name = row.caughtName?.trim() ? row.caughtName : resolved.displayName;
+      const rarity = normalizeRarity(row.rarity);
+      const key = `${name}::${rarity}`;
+      const existing = byName.get(key) ?? { name, rarity, count: 0, totalValue: 0 };
+      existing.count += 1;
+      existing.totalValue += row.finalValue;
+      byName.set(key, existing);
+      baseTotal += row.finalValue;
+      if (fisherBonusRate > 0) {
+        fisherBonus += Math.floor(row.finalValue * fisherBonusRate);
+      }
+    }
+
+    const entries = [...byName.values()].sort((a, b) => {
+      if (b.totalValue !== a.totalValue) return b.totalValue - a.totalValue;
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      unsold: rows.length,
+      baseTotal,
+      fisherBonus,
+      estimatedTotal: baseTotal + fisherBonus,
+      entries
+    };
+  }
+
   public fishRarityGuideText(): string {
     const totalWeight = Object.values(FISH_RARITY_BASE_WEIGHTS).reduce((sum, weight) => sum + weight, 0);
     const catchLabelByRarity: Record<FishRarity, string> = {

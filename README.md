@@ -106,6 +106,7 @@ Rods/fishing:
 - `/fish cast`
 - `/fish sell catch_id:<id|last|all>`
 - `/fish collection`
+- `/fish value`
 - `/fish rarities`
 - `/fish index`
 

@@ -194,6 +194,33 @@ export const handleInteraction = async (
       });
       return;
     }
+    if (sub === 'value') {
+      const result = await services.game.fishValueView(discordId, username);
+      if (result.unsold === 0) {
+        await replyWithEmbed(interaction, 'No unsold fish in inventory.', {
+          title: 'Fish Value'
+        });
+        return;
+      }
+      const maxLines = 20;
+      const lines = result.entries.slice(0, maxLines).map(
+        (entry) => `- ${entry.name} [${entry.rarity}] x${entry.count}: ${entry.totalValue} Molgium`
+      );
+      const hiddenCount = Math.max(0, result.entries.length - maxLines);
+      const valueSummary =
+        `Unsold catches: ${result.unsold}\n` +
+        `Base value: ${result.baseTotal} Molgium\n` +
+        (result.fisherBonus > 0
+          ? `Fisher bonus if sold now: +${result.fisherBonus} Molgium\n`
+          : '') +
+        `Estimated sell value now: ${result.estimatedTotal} Molgium`;
+      await replyWithEmbed(
+        interaction,
+        `${valueSummary}\n\nInventory breakdown:\n${lines.join('\n')}${hiddenCount > 0 ? `\n...and ${hiddenCount} more entries.` : ''}`,
+        { title: 'Fish Value' }
+      );
+      return;
+    }
     if (sub === 'rarities') {
       await replyWithEmbed(interaction, services.game.fishRarityGuideText(), {
         title: 'Fish Rarities'
