@@ -285,7 +285,7 @@ export const handleInteraction = async (
     }
     const status = services.game.jackpotStatus();
     const lines = status.entries.map(
-      (entry) => `${entry.username}: ${entry.amount} (effective ${entry.effectiveWeightPct}%)`
+      (entry) => `${entry.username}: ${entry.amount} (chance ${entry.winChancePct}%)`
     );
     await replyWithEmbed(interaction, `${status.header}\n${lines.join('\n') || 'No entries.'}`, {
       title: 'Jackpot'

@@ -2137,13 +2137,13 @@ export class MolgianService {
     }
     return {
       ok: true,
-      message: `Entered jackpot with ${amount} Molgium. Winner weight has a 30% per-user cap.`
+      message: `Entered jackpot with ${amount} Molgium. Winner chance is proportional to total contribution.`
     };
   }
 
   public jackpotStatus(): {
     header: string;
-    entries: Array<{ username: string; amount: number; effectiveWeightPct: number }>;
+    entries: Array<{ username: string; amount: number; winChancePct: number }>;
   } {
     const round = this.openJackpotRound();
     if (!round) return { header: 'No active jackpot round.', entries: [] };
@@ -2156,17 +2156,15 @@ export class MolgianService {
       .where(eq(jackpotEntries.roundId, round.id))
       .groupBy(jackpotEntries.userId)
       .all();
-    const cap = Math.floor(round.totalPool * 0.3);
     return {
       header: `Round #${round.id} pool ${round.totalPool} Molgium`,
       entries: grouped.map((entry) => {
         const user = db.select().from(users).where(eq(users.id, entry.userId)).get();
         const value = Number(entry.amount ?? 0);
-        const effective = Math.min(value, cap);
         return {
           username: user?.username ?? `user-${entry.userId}`,
           amount: value,
-          effectiveWeightPct: round.totalPool === 0 ? 0 : Number(((effective / round.totalPool) * 100).toFixed(2))
+          winChancePct: round.totalPool === 0 ? 0 : Number(((value / round.totalPool) * 100).toFixed(2))
         };
       })
     };
@@ -2189,12 +2187,11 @@ export class MolgianService {
       db.update(jackpotRounds).set({ status: 'closed', closedAt: nowMs() }).where(eq(jackpotRounds.id, round.id)).run();
       return;
     }
-    const cap = Math.floor(round.totalPool * 0.3);
     const weighted = grouped.map((entry) => ({
       userId: entry.userId,
-      effective: Math.max(1, Math.min(Number(entry.amount ?? 0), cap))
+      weight: Math.max(1, Number(entry.amount ?? 0))
     }));
-    const winnerUserId = weightedPick(weighted.map((entry) => ({ item: entry.userId, weight: entry.effective })));
+    const winnerUserId = weightedPick(weighted.map((entry) => ({ item: entry.userId, weight: entry.weight })));
     const tax = calculateJackpotTax(round.totalPool);
     const payout = round.totalPool - tax;
     db.transaction((tx) => {
