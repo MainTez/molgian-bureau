@@ -4,11 +4,15 @@ export const BOT_NAME = 'Molgian Bureau';
 export const CURRENCY_NAME = 'Molgium';
 export const DAILY_RESET_HOUR = 6;
 export const WORK_ROBBERY_CHANCE = 0.01;
+export const TREASURY_DRIP_FISH_SELL_RATE = 0.05;
+export const TREASURY_DRIP_GAMBLE_LOSS_RATE = 0.05;
+export const WORK_STREAK_BONUS_PER_DAY = 0.03;
+export const WORK_STREAK_BONUS_CAP = 0.3;
 
 export const RAISE_TIERS = [
-  { id: 1, cost: 10000, newSalaryBase: 250 },
-  { id: 2, cost: 30000, newSalaryBase: 500 },
-  { id: 3, cost: 75000, newSalaryBase: 900 }
+  { id: 1, cost: 500, newSalaryBase: 250 },
+  { id: 2, cost: 1000, newSalaryBase: 500 },
+  { id: 3, cost: 2000, newSalaryBase: 900 }
 ] as const;
 
 export const ROD_CONFIG: Record<
@@ -48,7 +52,7 @@ export const ROD_CONFIG: Record<
   }
 };
 
-export type FishRarity = Rarity | 'Trash';
+export type FishRarity = Rarity | 'Trash' | 'God';
 
 export const FISH_RARITY_BASE_WEIGHTS: Record<FishRarity, number> = {
   Trash: 38,
@@ -56,7 +60,8 @@ export const FISH_RARITY_BASE_WEIGHTS: Record<FishRarity, number> = {
   Rare: 16,
   Epic: 5,
   Legendary: 1.7,
-  Mythic: 0.3
+  Mythic: 0.3,
+  God: 0
 };
 
 export const FISH_BASE_VALUES: Record<FishRarity, [number, number]> = {
@@ -65,7 +70,8 @@ export const FISH_BASE_VALUES: Record<FishRarity, [number, number]> = {
   Rare: [50, 130],
   Epic: [160, 360],
   Legendary: [420, 900],
-  Mythic: [1200, 2400]
+  Mythic: [1200, 2400],
+  God: [2600, 5200]
 };
 
 export const FISH_SEASONS: Record<

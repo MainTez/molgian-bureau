@@ -45,7 +45,11 @@ import {
   ROTATING_SHOP_SIZE,
   SELL_VALUES,
   SHARD_VALUES,
+  TREASURY_DRIP_FISH_SELL_RATE,
+  TREASURY_DRIP_GAMBLE_LOSS_RATE,
   WORK_ROBBERY_CHANCE,
+  WORK_STREAK_BONUS_CAP,
+  WORK_STREAK_BONUS_PER_DAY,
   type FishRarity
 } from './domain/gameConfig.js';
 import { canUserWinEgg } from './domain/eggs/scheduling.js';
@@ -63,6 +67,7 @@ import {
   eventRuns,
   fishCatches,
   fishCollection,
+  fishHallOfFame,
   jackpotEntries,
   jackpotRounds,
   loadout,
@@ -135,12 +140,36 @@ type EventName =
   | 'fishing_madness'
   | 'coinflip_chaos'
   | 'egg_spawn';
+type MissionPeriod = 'daily' | 'weekly';
+type MissionMetric = 'fish_cast' | 'gamble_play' | 'gamble_win' | 'work_claim' | 'fish_sell' | 'hatch';
+type MissionDefinition = {
+  id: string;
+  period: MissionPeriod;
+  metric: MissionMetric;
+  target: number;
+  label: string;
+};
 
 const speedTypePrompts = [
   'Molgium never sleeps',
   'Special Place supremacy',
   'Bureau chaos approved',
   'No eggs for cowards'
+];
+const MISSION_SHARD_REWARD_TENTHS = [1, 2, 3, 4, 5] as const;
+const MISSION_DEFINITIONS: MissionDefinition[] = [
+  { id: 'daily_cast_5', period: 'daily', metric: 'fish_cast', target: 5, label: 'Cast 5 fish' },
+  { id: 'daily_gamble_3', period: 'daily', metric: 'gamble_play', target: 3, label: 'Play 3 gambles' },
+  { id: 'daily_work_1', period: 'daily', metric: 'work_claim', target: 1, label: 'Use /work once' },
+  { id: 'weekly_sell_40', period: 'weekly', metric: 'fish_sell', target: 40, label: 'Sell 40 fish' },
+  { id: 'weekly_hatch_8', period: 'weekly', metric: 'hatch', target: 8, label: 'Hatch 8 eggs' },
+  {
+    id: 'weekly_gamble_win_12',
+    period: 'weekly',
+    metric: 'gamble_win',
+    target: 12,
+    label: 'Win 12 gambles'
+  }
 ];
 const claimWords = ['MOLGIUM', 'BUREAU', 'HATCH', 'CHAOS', 'ROD'];
 const emojiPool = ['🐟', '🥚', '💰', '🔥', '⭐', '🧪', '🧿', '🫧'];
@@ -172,6 +201,8 @@ const legendaryFishNamePrefixes = ['Storm', 'Abyss', 'Iron', 'Night', 'Frost', '
 const legendaryFishNameCores = ['fang', 'maw', 'fin', 'scale', 'rider', 'seer', 'warden', 'reaver'];
 const mythicFishNamePrefixes = ['Voidborn', 'Astral', 'Titan', 'Eternal', 'Leviathan', 'Celestial', 'Runic'];
 const mythicFishNameCores = ['Sovereign', 'Oracle', 'Emperor', 'Colossus', 'Monarch', 'Prime'];
+const godFishNamePrefixes = ['Apex', 'Divine', 'Omega', 'Eclipse', 'Ascendant', 'Immortal', 'Unbound'];
+const godFishNameCores = ['Leviathan', 'Paragon', 'Overlord', 'Titan', 'Archon', 'Mythos', 'Dominion'];
 const commonFishNamePrefixes = ['plain', 'basic', 'normal', 'average', 'dull', 'boring', 'regular', 'okay'];
 const commonFishNameCores = ['fish', 'catch', 'swimmer', 'thing', 'one', 'blob', 'guy', 'specimen'];
 const trashFallbackPool: Array<{ key: string; displayName: string; rarity: FishRarity }> = [
@@ -203,6 +234,9 @@ const generateCreatureName = (): string =>
   `${pickRandom(fishNameWords)} ${pickRandom(creatureNameSuffixWords)}`;
 
 const generateEliteFishName = (rarity: FishRarity): string => {
+  if (rarity === 'God') {
+    return `${pickRandom(godFishNamePrefixes)} ${pickRandom(godFishNameCores)}`;
+  }
   if (rarity === 'Mythic') {
     return `${pickRandom(mythicFishNamePrefixes)} ${pickRandom(mythicFishNameCores)}`;
   }
@@ -222,14 +256,15 @@ const rollFishEnchantment = (): FishEnchantment | null => {
   return null;
 };
 
-const FISH_RARITY_SORT_DESC: FishRarity[] = ['Mythic', 'Legendary', 'Epic', 'Rare', 'Common', 'Trash'];
+const FISH_RARITY_SORT_DESC: FishRarity[] = ['God', 'Mythic', 'Legendary', 'Epic', 'Rare', 'Common', 'Trash'];
 const fishRarityRank: Record<FishRarity, number> = {
   Trash: 0,
   Common: 1,
   Rare: 2,
   Epic: 3,
   Legendary: 4,
-  Mythic: 5
+  Mythic: 5,
+  God: 6
 };
 const rodTierRank: Record<RodTier, number> = {
   starter: 1,
@@ -262,7 +297,8 @@ for (const fallbackFish of [
   { key: 'rare_catch', displayName: 'Rare Catch', rarity: 'Rare' as FishRarity },
   { key: 'epic_catch', displayName: 'Epic Catch', rarity: 'Epic' as FishRarity },
   { key: 'legendary_catch', displayName: 'Legendary Catch', rarity: 'Legendary' as FishRarity },
-  { key: 'mythic_catch', displayName: 'Mythic Catch', rarity: 'Mythic' as FishRarity }
+  { key: 'mythic_catch', displayName: 'Mythic Catch', rarity: 'Mythic' as FishRarity },
+  { key: 'god_catch', displayName: 'God Catch', rarity: 'God' as FishRarity }
 ]) {
   if (!knownFishByKey.has(fallbackFish.key)) {
     knownFishByKey.set(fallbackFish.key, {
@@ -288,6 +324,7 @@ const normalizeRarity = (value: string | null | undefined): FishRarity => {
   if (normalized === 'epic') return 'Epic';
   if (normalized === 'legendary') return 'Legendary';
   if (normalized === 'mythic') return 'Mythic';
+  if (normalized === 'god') return 'God';
   return 'Common';
 };
 
@@ -428,6 +465,38 @@ export class MolgianService {
     return toDayKey(this.currentWindowStart(timestampMs), appEnv.TIMEZONE);
   }
 
+  private currentWeekKey(timestampMs = nowMs()): string {
+    return DateTime.fromMillis(this.currentWindowStart(timestampMs), { zone: appEnv.TIMEZONE }).toFormat("kkkk-'W'WW");
+  }
+
+  private previousDayKey(timestampMs = nowMs()): string {
+    return toDayKey(this.currentWindowStart(timestampMs) - 1, appEnv.TIMEZONE);
+  }
+
+  private workStreakCountKey(userId: number): string {
+    return `work:streak:count:${userId}`;
+  }
+
+  private workStreakLastDayKey(userId: number): string {
+    return `work:streak:last_day:${userId}`;
+  }
+
+  private missionProgressKey(userId: number, missionId: string, periodKey: string): string {
+    return `mission:progress:${missionId}:${userId}:${periodKey}`;
+  }
+
+  private missionClaimedKey(userId: number, missionId: string, periodKey: string): string {
+    return `mission:claimed:${missionId}:${userId}:${periodKey}`;
+  }
+
+  private shardRemainderTenthsKey(userId: number): string {
+    return `shards:remainder_tenths:${userId}`;
+  }
+
+  private legacyShardHalfKey(userId: number): string {
+    return `shards:half:${userId}`;
+  }
+
   private getState(key: string): string | null {
     return db.select().from(appState).where(eq(appState.key, key)).get()?.value ?? null;
   }
@@ -476,7 +545,9 @@ export class MolgianService {
     for (const row of legacyRows) {
       const rarity = normalizeRarity(row.rarity);
       let caughtName: string | null = null;
-      if (rarity === 'Mythic') {
+      if (rarity === 'God') {
+        caughtName = generateEliteFishName('God');
+      } else if (rarity === 'Mythic') {
         caughtName = 'Leviathan Prime';
       } else if (rarity === 'Legendary') {
         caughtName = generateEliteFishName('Legendary');
@@ -609,7 +680,7 @@ export class MolgianService {
       .values({
         discordId,
         username,
-        salaryBase: 100,
+        salaryBase: 150,
         lastWorkAt: null,
         xp: 0,
         level: 1,
@@ -653,21 +724,71 @@ export class MolgianService {
     return db.select().from(balances).where(eq(balances.userId, userId)).get()?.amount ?? 0;
   }
 
-  private shardHalfStateKey(userId: number): string {
-    return `shards:half:${userId}`;
+  private parseTenths(value: string | null | undefined): number | null {
+    if (value === null || value === undefined) return null;
+    const numeric = Number(value);
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > 9) return null;
+    return numeric;
   }
 
-  private hasHalfShard(userId: number): boolean {
-    return this.getState(this.shardHalfStateKey(userId)) === '1';
+  private readShardRemainderTenths(userId: number): number {
+    const remainder = this.parseTenths(this.getState(this.shardRemainderTenthsKey(userId)));
+    if (remainder !== null) return remainder;
+    const legacyHalf = this.getState(this.legacyShardHalfKey(userId)) === '1';
+    if (legacyHalf) {
+      this.setState(this.shardRemainderTenthsKey(userId), '5');
+      this.setState(this.legacyShardHalfKey(userId), '0');
+      return 5;
+    }
+    return 0;
   }
 
-  private setHalfShard(userId: number, value: boolean): void {
-    this.setState(this.shardHalfStateKey(userId), value ? '1' : '0');
+  private getShardTenths(userId: number): number {
+    const fullShards = db.select().from(shards).where(eq(shards.userId, userId)).get()?.amount ?? 0;
+    return fullShards * 10 + this.readShardRemainderTenths(userId);
+  }
+
+  private addShardsTenths(userId: number, deltaTenths: number): number {
+    if (!Number.isInteger(deltaTenths)) throw new Error('Shard delta must be an integer number of tenths.');
+    return db.transaction((tx) => {
+      const shardRow = tx.select().from(shards).where(eq(shards.userId, userId)).get();
+      if (!shardRow) throw new Error('shards row missing');
+
+      const remainderKey = this.shardRemainderTenthsKey(userId);
+      const legacyHalfKey = this.legacyShardHalfKey(userId);
+      const remainderRow = tx.select().from(appState).where(eq(appState.key, remainderKey)).get();
+      const legacyHalfRow = tx.select().from(appState).where(eq(appState.key, legacyHalfKey)).get();
+
+      const explicitRemainder = this.parseTenths(remainderRow?.value);
+      const legacyHalf = legacyHalfRow?.value === '1';
+      const currentRemainderTenths = explicitRemainder ?? (legacyHalf ? 5 : 0);
+      const currentTenths = shardRow.amount * 10 + currentRemainderTenths;
+      const nextTenths = currentTenths + deltaTenths;
+      if (nextTenths < 0) throw new Error('Not enough shards.');
+
+      const nextWholeShards = Math.floor(nextTenths / 10);
+      const nextRemainderTenths = nextTenths % 10;
+      tx.update(shards).set({ amount: nextWholeShards }).where(eq(shards.userId, userId)).run();
+      tx.insert(appState)
+        .values({ key: remainderKey, value: String(nextRemainderTenths), updatedAt: nowMs() })
+        .onConflictDoUpdate({
+          target: appState.key,
+          set: { value: String(nextRemainderTenths), updatedAt: nowMs() }
+        })
+        .run();
+      tx.insert(appState)
+        .values({ key: legacyHalfKey, value: '0', updatedAt: nowMs() })
+        .onConflictDoUpdate({
+          target: appState.key,
+          set: { value: '0', updatedAt: nowMs() }
+        })
+        .run();
+      return nextTenths;
+    });
   }
 
   private getShardDisplayAmount(userId: number): number {
-    const fullShards = db.select().from(shards).where(eq(shards.userId, userId)).get()?.amount ?? 0;
-    return fullShards + (this.hasHalfShard(userId) ? 0.5 : 0);
+    return this.getShardTenths(userId) / 10;
   }
 
   private formatShardAmount(amount: number): string {
@@ -701,6 +822,152 @@ export class MolgianService {
 
   public getTreasury(): number {
     return db.select().from(treasury).where(eq(treasury.id, 1)).get()?.amount ?? 0;
+  }
+
+  private getWorkStreakCount(userId: number): number {
+    const raw = this.getStateNumber(this.workStreakCountKey(userId));
+    if (!raw || raw < 0) return 0;
+    return Math.floor(raw);
+  }
+
+  private getEffectiveWorkStreak(userId: number, timestampMs = nowMs()): number {
+    const streak = this.getWorkStreakCount(userId);
+    if (streak <= 0) return 0;
+    const lastDay = this.getState(this.workStreakLastDayKey(userId));
+    if (!lastDay) return 0;
+    const today = this.currentDayKey(timestampMs);
+    const yesterday = this.previousDayKey(timestampMs);
+    if (lastDay !== today && lastDay !== yesterday) return 0;
+    return streak;
+  }
+
+  private updateWorkStreak(userId: number, timestampMs = nowMs()): { streak: number; bonusPct: number } {
+    const today = this.currentDayKey(timestampMs);
+    const yesterday = this.previousDayKey(timestampMs);
+    const lastDay = this.getState(this.workStreakLastDayKey(userId));
+    const prior = this.getWorkStreakCount(userId);
+
+    let streak = 1;
+    if (lastDay === yesterday) {
+      streak = prior + 1;
+    } else if (lastDay === today) {
+      streak = Math.max(1, prior);
+    }
+
+    this.setState(this.workStreakCountKey(userId), String(streak));
+    this.setState(this.workStreakLastDayKey(userId), today);
+
+    const bonusPct = Math.min(streak * WORK_STREAK_BONUS_PER_DAY, WORK_STREAK_BONUS_CAP);
+    return { streak, bonusPct };
+  }
+
+  private missionPeriodKey(period: MissionPeriod, timestampMs = nowMs()): string {
+    return period === 'daily' ? this.currentDayKey(timestampMs) : this.currentWeekKey(timestampMs);
+  }
+
+  private missionProgress(userId: number, mission: MissionDefinition, timestampMs = nowMs()): {
+    progress: number;
+    completed: boolean;
+    claimed: boolean;
+    periodKey: string;
+  } {
+    const periodKey = this.missionPeriodKey(mission.period, timestampMs);
+    const progressValue = this.getStateNumber(this.missionProgressKey(userId, mission.id, periodKey)) ?? 0;
+    const progress = Math.max(0, Math.min(mission.target, Math.floor(progressValue)));
+    const claimed = this.getState(this.missionClaimedKey(userId, mission.id, periodKey)) === '1';
+    return { progress, completed: progress >= mission.target, claimed, periodKey };
+  }
+
+  private incrementMissionMetric(userId: number, metric: MissionMetric, amount = 1): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const increment = Math.floor(amount);
+    if (increment <= 0) return;
+    const timestampMs = nowMs();
+
+    for (const mission of MISSION_DEFINITIONS) {
+      if (mission.metric !== metric) continue;
+      const periodKey = this.missionPeriodKey(mission.period, timestampMs);
+      const progressKey = this.missionProgressKey(userId, mission.id, periodKey);
+      const existing = this.getStateNumber(progressKey) ?? 0;
+      const next = Math.max(0, Math.min(mission.target, Math.floor(existing) + increment));
+      this.setState(progressKey, String(next));
+    }
+  }
+
+  public async missionsView(discordId: string, username: string): Promise<{
+    dailyKey: string;
+    weeklyKey: string;
+    daily: Array<{
+      id: string;
+      label: string;
+      progress: number;
+      target: number;
+      completed: boolean;
+      claimed: boolean;
+    }>;
+    weekly: Array<{
+      id: string;
+      label: string;
+      progress: number;
+      target: number;
+      completed: boolean;
+      claimed: boolean;
+    }>;
+  }> {
+    const user = await this.ensureUser(discordId, username);
+    const timestampMs = nowMs();
+    const dailyKey = this.currentDayKey(timestampMs);
+    const weeklyKey = this.currentWeekKey(timestampMs);
+
+    const mapped = MISSION_DEFINITIONS.map((mission) => {
+      const state = this.missionProgress(user.id, mission, timestampMs);
+      return {
+        id: mission.id,
+        label: mission.label,
+        progress: state.progress,
+        target: mission.target,
+        completed: state.completed,
+        claimed: state.claimed,
+        period: mission.period
+      };
+    });
+
+    return {
+      dailyKey,
+      weeklyKey,
+      daily: mapped.filter((entry) => entry.period === 'daily'),
+      weekly: mapped.filter((entry) => entry.period === 'weekly')
+    };
+  }
+
+  public async missionClaim(
+    discordId: string,
+    username: string,
+    missionId: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const mission = MISSION_DEFINITIONS.find((entry) => entry.id === missionId);
+    if (!mission) return { ok: false, message: 'Unknown mission id.' };
+
+    const state = this.missionProgress(user.id, mission, nowMs());
+    if (!state.completed) {
+      return {
+        ok: false,
+        message: `Mission not complete yet: ${mission.label} (${state.progress}/${mission.target}).`
+      };
+    }
+    if (state.claimed) return { ok: false, message: 'Mission already claimed for this period.' };
+
+    const rewardTenths = pickRandom(MISSION_SHARD_REWARD_TENTHS);
+    this.addShardsTenths(user.id, rewardTenths);
+    this.setState(this.missionClaimedKey(user.id, mission.id, state.periodKey), '1');
+
+    return {
+      ok: true,
+      message:
+        `Mission claimed: ${mission.label}. ` +
+        `Reward: ${this.formatShardAmount(rewardTenths / 10)} shards.`
+    };
   }
 
   private ensurePetFlavor(
@@ -759,7 +1026,9 @@ export class MolgianService {
     const activePetInfo = await this.getActivePet(user.id);
     const workerMultiplier = activePetInfo?.petType === 'Worker' ? PET_WORKER_MULTIPLIER[activePetInfo.rarity] : 1;
     const inflationMultiplier = this.isBoostActive('event:inflation_until') ? 2 : 1;
-    const payout = Math.floor(user.salaryBase * workerMultiplier * inflationMultiplier);
+    const streak = this.updateWorkStreak(user.id);
+    const streakMultiplier = 1 + streak.bonusPct;
+    const payout = Math.floor(user.salaryBase * workerMultiplier * inflationMultiplier * streakMultiplier);
     const gotRobbed = rollChance(WORK_ROBBERY_CHANCE);
     db.transaction((tx) => {
       const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
@@ -768,13 +1037,21 @@ export class MolgianService {
       const nextBalance = gotRobbed ? wallet.amount : wallet.amount + payout;
       tx.update(balances).set({ amount: nextBalance }).where(eq(balances.userId, user.id)).run();
     });
+    this.incrementMissionMetric(user.id, 'work_claim', 1);
     if (gotRobbed) {
       return {
         ok: true,
-        message: `You got robbed on the way to work. Today paid 0 Molgium (lost ${payout}).`
+        message:
+          `You got robbed on the way to work. Today paid 0 Molgium (lost ${payout}). ` +
+          `Work streak: ${streak.streak} (+${formatPercent(streak.bonusPct * 100)}).`
       };
     }
-    return { ok: true, message: `You earned ${payout} Molgium from /work.` };
+    return {
+      ok: true,
+      message:
+        `You earned ${payout} Molgium from /work. ` +
+        `Work streak: ${streak.streak} (+${formatPercent(streak.bonusPct * 100)}).`
+    };
   }
 
   public async jobList(discordId: string, username: string): Promise<{
@@ -1106,11 +1383,21 @@ export class MolgianService {
       const remaining = Math.ceil((FISH_COOLDOWN_MS - (nowMs() - lastCast)) / 1000);
       return { ok: false, message: `Fishing cooldown active: ${remaining}s remaining.` };
     }
-    let rarity = rollFishRarity(rod.tier as RodTier, this.isBoostActive('event:fishing_madness_until'));
-    if (Math.random() < ROD_CONFIG[rod.tier as RodTier].rarityBumpChance) rarity = bumpFishRarity(rarity);
+    const rodTier = rod.tier as RodTier;
+    const rodConfig = ROD_CONFIG[rodTier];
+    let rarity = rollFishRarity(rodTier, this.isBoostActive('event:fishing_madness_until'));
+    let upgradedToGodByRod = false;
+    if (Math.random() < rodConfig.rarityBumpChance) {
+      const bumped = bumpFishRarity(rarity);
+      upgradedToGodByRod = rarity === 'Mythic' && bumped === 'God';
+      rarity = bumped;
+    }
     const active = await this.getActivePet(user.id);
     if (active?.petType === 'Fisher' && Math.random() < PET_FISHER_BUMP_CHANCE[active.rarity]) {
-      rarity = bumpFishRarity(rarity);
+      const bumped = bumpFishRarity(rarity);
+      if (!(rarity === 'Mythic' && bumped === 'God')) {
+        rarity = bumped;
+      }
     }
     const seasonKey = this.currentSeasonKey();
     const seasonFish = FISH_SEASONS[seasonKey] ?? FISH_SEASONS.default ?? [];
@@ -1125,14 +1412,14 @@ export class MolgianService {
             rarity
           };
     const [minValue, maxValue] = FISH_BASE_VALUES[rarity];
-    let value = Math.floor(randomIntInclusive(minValue, maxValue) * ROD_CONFIG[rod.tier as RodTier].sellBonusMultiplier);
+    let value = Math.floor(randomIntInclusive(minValue, maxValue) * rodConfig.sellBonusMultiplier);
     let doubled = false;
-    if (Math.random() < ROD_CONFIG[rod.tier as RodTier].doubleSellChance) {
+    if (Math.random() < rodConfig.doubleSellChance) {
       value *= 2;
       doubled = true;
     }
     const specialName =
-      rarity === 'Legendary' || rarity === 'Mythic'
+      rarity === 'Legendary' || rarity === 'Mythic' || rarity === 'God'
         ? generateEliteFishName(rarity)
         : rarity === 'Common'
           ? generateBoringCommonFishName()
@@ -1184,7 +1471,11 @@ export class MolgianService {
         .where(and(eq(fishCollection.userId, user.id), eq(fishCollection.fishKey, fish.key)))
         .run();
     }
+    if (rarity === 'Mythic' || rarity === 'God') {
+      await this.announceRareFish(user, inserted.id, fish.key, caughtName, rarity, value, upgradedToGodByRod);
+    }
     this.setState(cooldownKey, String(nowMs()));
+    this.incrementMissionMetric(user.id, 'fish_cast', 1);
     return {
       ok: true,
       message:
@@ -1217,22 +1508,34 @@ export class MolgianService {
           ? unsoldRows.reduce((sum, row) => sum + Math.floor(row.finalValue * fisherBonusRate), 0)
           : 0;
       const payout = baseTotal + fisherBonusTotal;
+      const treasuryDrip = Math.floor(payout * TREASURY_DRIP_FISH_SELL_RATE);
+      const payoutAfterDrip = Math.max(0, payout - treasuryDrip);
       let finalBalance = 0;
       db.transaction((tx) => {
         const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
-        if (!wallet) throw new Error('Wallet missing');
+        const treasuryRow = tx.select().from(treasury).where(eq(treasury.id, 1)).get();
+        if (!wallet || !treasuryRow) throw new Error('Wallet/treasury missing');
         tx.update(fishCatches)
           .set({ soldAt: nowMs() })
           .where(and(eq(fishCatches.userId, user.id), isNull(fishCatches.soldAt)))
           .run();
-        finalBalance = wallet.amount + payout;
+        finalBalance = wallet.amount + payoutAfterDrip;
         tx.update(balances).set({ amount: finalBalance }).where(eq(balances.userId, user.id)).run();
+        if (treasuryDrip > 0) {
+          tx
+            .update(treasury)
+            .set({ amount: treasuryRow.amount + treasuryDrip, updatedAt: nowMs() })
+            .where(eq(treasury.id, 1))
+            .run();
+        }
       });
+      this.incrementMissionMetric(user.id, 'fish_sell', unsoldRows.length);
       return {
         ok: true,
         message:
-          `Sold ${unsoldRows.length} catches for ${payout} Molgium` +
+          `Sold ${unsoldRows.length} catches for ${payoutAfterDrip} Molgium` +
           `${fisherBonusTotal > 0 ? ` (${baseTotal} + ${fisherBonusTotal} Fisher bonus)` : ''}. ` +
+          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
           `New balance: ${finalBalance} Molgium.`
       };
     }
@@ -1258,19 +1561,31 @@ export class MolgianService {
     const fisherBonus =
       active?.petType === 'Fisher' ? Math.floor(row.finalValue * PET_FISHER_SELL_BONUS[active.rarity]) : 0;
     const payout = row.finalValue + fisherBonus;
+    const treasuryDrip = Math.floor(payout * TREASURY_DRIP_FISH_SELL_RATE);
+    const payoutAfterDrip = Math.max(0, payout - treasuryDrip);
     let finalBalance = 0;
     db.transaction((tx) => {
       const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
-      if (!wallet) throw new Error('Wallet missing');
+      const treasuryRow = tx.select().from(treasury).where(eq(treasury.id, 1)).get();
+      if (!wallet || !treasuryRow) throw new Error('Wallet/treasury missing');
       tx.update(fishCatches).set({ soldAt: nowMs() }).where(eq(fishCatches.id, row.id)).run();
-      finalBalance = wallet.amount + payout;
+      finalBalance = wallet.amount + payoutAfterDrip;
       tx.update(balances).set({ amount: finalBalance }).where(eq(balances.userId, user.id)).run();
+      if (treasuryDrip > 0) {
+        tx
+          .update(treasury)
+          .set({ amount: treasuryRow.amount + treasuryDrip, updatedAt: nowMs() })
+          .where(eq(treasury.id, 1))
+          .run();
+      }
     });
+    this.incrementMissionMetric(user.id, 'fish_sell', 1);
     return {
       ok: true,
       message:
-        `Sold catch ${row.id} for ${payout} Molgium` +
+        `Sold catch ${row.id} for ${payoutAfterDrip} Molgium` +
         `${fisherBonus > 0 ? ` (${row.finalValue} + ${fisherBonus} Fisher bonus)` : ''}. ` +
+        `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
         `New balance: ${finalBalance} Molgium.`
     };
   }
@@ -1368,7 +1683,8 @@ export class MolgianService {
       Rare: 'Rare Catch',
       Epic: 'Epic Catch',
       Legendary: 'Legendary Catch',
-      Mythic: 'Mythic Catch'
+      Mythic: 'Mythic Catch',
+      God: 'God Catch'
     };
     const lines: string[] = [];
     lines.push('Molgian Bureau - Fish Rarity Guide');
@@ -1382,6 +1698,7 @@ export class MolgianService {
       lines.push('');
     }
     lines.push('Note: rod bonuses, active pets, and events can change the final chance.');
+    lines.push('God Catch can only happen from a rod rarity upgrade on an already-Mythic roll.');
     return lines.join('\n').trim();
   }
 
@@ -1677,13 +1994,22 @@ export class MolgianService {
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Insufficient Molgium.' };
     }
+    this.incrementMissionMetric(user.id, 'gamble_play', 1);
     const won = Math.random() < 0.5;
     if (!won) {
+      const treasuryDrip = Math.floor(amount * TREASURY_DRIP_GAMBLE_LOSS_RATE);
+      if (treasuryDrip > 0) {
+        this.addTreasury(treasuryDrip);
+      }
       return {
         ok: true,
-        message: `Coinflip loss. Lost ${amount} Molgium. New balance: ${postBetBalance} Molgium.`
+        message:
+          `Coinflip loss. Lost ${amount} Molgium. ` +
+          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+          `New balance: ${postBetBalance} Molgium.`
       };
     }
+    this.incrementMissionMetric(user.id, 'gamble_win', 1);
     const active = await this.getActivePet(user.id);
     const bonus = active?.petType === 'Gambler' ? Math.floor(amount * PET_GAMBLER_WIN_BONUS[active.rarity]) : 0;
     const finalBalance = this.changeBalance(user.id, amount * 2 + bonus);
@@ -1706,14 +2032,23 @@ export class MolgianService {
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Insufficient Molgium.' };
     }
+    this.incrementMissionMetric(user.id, 'gamble_play', 1);
     const player = randomIntInclusive(1, 6);
     const house = randomIntInclusive(1, 6);
     if (player <= house) {
+      const treasuryDrip = Math.floor(amount * TREASURY_DRIP_GAMBLE_LOSS_RATE);
+      if (treasuryDrip > 0) {
+        this.addTreasury(treasuryDrip);
+      }
       return {
         ok: true,
-        message: `Dice loss (${player} vs ${house}). Lost ${amount}. New balance: ${postBetBalance} Molgium.`
+        message:
+          `Dice loss (${player} vs ${house}). Lost ${amount}. ` +
+          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+          `New balance: ${postBetBalance} Molgium.`
       };
     }
+    this.incrementMissionMetric(user.id, 'gamble_win', 1);
     const active = await this.getActivePet(user.id);
     const bonus = active?.petType === 'Gambler' ? Math.floor(amount * PET_GAMBLER_WIN_BONUS[active.rarity]) : 0;
     const finalBalance = this.changeBalance(user.id, amount * 2 + bonus);
@@ -2539,6 +2874,43 @@ export class MolgianService {
     return rarityRank[reroll] > rarityRank[rolled] ? reroll : rolled;
   }
 
+  private async announceRareFish(
+    user: typeof users.$inferSelect,
+    catchId: number,
+    fishKey: string,
+    fishName: string,
+    rarity: FishRarity,
+    value: number,
+    upgradedToGodByRod: boolean
+  ): Promise<void> {
+    const hof = await this.ensureHofChannel();
+    const tierText = rarity === 'God' ? 'GOD FISH' : 'MYTHIC FISH';
+    const rodNote = upgradedToGodByRod ? ' (rod tier upgrade proc)' : '';
+    const message = `${tierText}: ${user.username} caught ${fishName} [${rarity}] worth ${value} Molgium (catch #${catchId})${rodNote}.`;
+
+    if (this.eventChannel) {
+      await this.eventChannel.send({
+        embeds: [createBotEmbed(message, { tone: 'event', title: 'Rare Fish' })]
+      });
+    }
+    if (hof) {
+      await hof.send({
+        embeds: [createBotEmbed(message, { tone: 'event', title: 'Hall of Fame' })]
+      });
+      db.insert(fishHallOfFame)
+        .values({
+          userId: user.id,
+          catchId,
+          fishKey,
+          fishName,
+          rarity,
+          channelId: hof.id,
+          recordedAt: nowMs()
+        })
+        .run();
+    }
+  }
+
   private async announceMythic(user: typeof users.$inferSelect, petType: PetType, petInstanceId: number): Promise<void> {
     const hof = await this.ensureHofChannel();
     const message = `MYTHIC HATCH: ${user.username} hatched a Mythic ${petType} pet (instance #${petInstanceId}).`;
@@ -2637,6 +3009,7 @@ export class MolgianService {
     if (rarity === 'Mythic' && !duplicate) {
       await this.announceMythic(user, petType, petInstanceId);
     }
+    this.incrementMissionMetric(user.id, 'hatch', 1);
     return {
       ok: true,
       suspense: ['Common...', 'Rare...', 'Epic...', 'Legendary...', 'Final result...'],
@@ -2742,32 +3115,17 @@ export class MolgianService {
       const rarity = pet.rarity as Rarity;
       const gain = SHARD_VALUES[rarity];
       const beforeAmount = this.getShardDisplayAmount(user.id);
-      if (rarity === 'Common') {
-        const hadHalf = this.hasHalfShard(user.id);
-        const fullShardGain = hadHalf ? 1 : 0;
-        db.transaction((tx) => {
-          const row = tx.select().from(shards).where(eq(shards.userId, user.id)).get();
-          if (!row) throw new Error('shards row missing');
-          tx.update(petInstances).set({ status: 'sharded', resolvedAt: nowMs() }).where(eq(petInstances.id, pet.id)).run();
-          tx.update(shards).set({ amount: row.amount + fullShardGain }).where(eq(shards.userId, user.id)).run();
-        });
-        this.setHalfShard(user.id, !hadHalf);
-        const afterAmount = this.getShardDisplayAmount(user.id);
-        return {
-          ok: true,
-          message: `Pet #${pet.id} sharded for 0.5 shards. Shards: ${this.formatShardAmount(beforeAmount)} -> ${this.formatShardAmount(afterAmount)}.`
-        };
-      }
       db.transaction((tx) => {
-        const row = tx.select().from(shards).where(eq(shards.userId, user.id)).get();
-        if (!row) throw new Error('shards row missing');
         tx.update(petInstances).set({ status: 'sharded', resolvedAt: nowMs() }).where(eq(petInstances.id, pet.id)).run();
-        tx.update(shards).set({ amount: row.amount + gain }).where(eq(shards.userId, user.id)).run();
       });
+      const gainTenths = rarity === 'Common' ? 5 : gain * 10;
+      this.addShardsTenths(user.id, gainTenths);
       const afterAmount = this.getShardDisplayAmount(user.id);
       return {
         ok: true,
-        message: `Pet #${pet.id} sharded for ${gain} shards. Shards: ${this.formatShardAmount(beforeAmount)} -> ${this.formatShardAmount(afterAmount)}.`
+        message:
+          `Pet #${pet.id} sharded for ${this.formatShardAmount(gainTenths / 10)} shards. ` +
+          `Shards: ${this.formatShardAmount(beforeAmount)} -> ${this.formatShardAmount(afterAmount)}.`
       };
     }
 
@@ -2859,15 +3217,15 @@ export class MolgianService {
 
   public async forgeMythicEgg(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const costTenths = FORGE_MYTHIC_EGG_COST * 10;
     try {
       db.transaction((tx) => {
-        const shardRow = tx.select().from(shards).where(eq(shards.userId, user.id)).get();
         const eggsRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-        if (!shardRow || !eggsRow) throw new Error('Missing shard/egg rows');
-        if (shardRow.amount < FORGE_MYTHIC_EGG_COST) throw new Error(`Need ${FORGE_MYTHIC_EGG_COST} shards.`);
-        tx.update(shards).set({ amount: shardRow.amount - FORGE_MYTHIC_EGG_COST }).where(eq(shards.userId, user.id)).run();
+        if (!eggsRow) throw new Error('Missing shard/egg rows');
+        if (this.getShardTenths(user.id) < costTenths) throw new Error(`Need ${FORGE_MYTHIC_EGG_COST} shards.`);
         tx.update(eggsInventory).set({ mythicEggs: eggsRow.mythicEggs + 1 }).where(eq(eggsInventory.userId, user.id)).run();
       });
+      this.addShardsTenths(user.id, -costTenths);
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Forge failed.' };
     }
@@ -2878,11 +3236,18 @@ export class MolgianService {
     balance: number;
     salaryBase: number;
     workReady: boolean;
+    workStreak: number;
+    workStreakBonusPct: number;
     activePet: string;
+    activePetBonuses: string[];
     eggs: number;
     mythicEggs: number;
     shards: number;
     loadout: { title: string | null; badge: string | null; frame: string | null };
+    dailyMissionsCompleted: number;
+    dailyMissionsTotal: number;
+    weeklyMissionsCompleted: number;
+    weeklyMissionsTotal: number;
     lifetimeEggsHatched: number;
     rarestPetOwned: string;
     rarestFishOwned: string;
@@ -2892,6 +3257,31 @@ export class MolgianService {
     const eggs = db.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
     const loadoutRow = db.select().from(loadout).where(eq(loadout.userId, user.id)).get();
     const active = await this.getActivePet(user.id);
+    const streak = this.getEffectiveWorkStreak(user.id);
+    const streakBonusPct = Math.min(streak * WORK_STREAK_BONUS_PER_DAY, WORK_STREAK_BONUS_CAP);
+    const activePetBonuses: string[] = [];
+    if (active) {
+      if (active.petType === 'Worker') {
+        const multiplier = PET_WORKER_MULTIPLIER[active.rarity];
+        activePetBonuses.push(`Work payout multiplier: x${multiplier.toFixed(2)} (+${formatPercent((multiplier - 1) * 100)})`);
+      }
+      if (active.petType === 'Fisher') {
+        activePetBonuses.push(`Fish rarity bump chance: ${formatPercent(PET_FISHER_BUMP_CHANCE[active.rarity] * 100)}`);
+        activePetBonuses.push(`Fish sell bonus: +${formatPercent(PET_FISHER_SELL_BONUS[active.rarity] * 100)}`);
+      }
+      if (active.petType === 'Gambler') {
+        activePetBonuses.push(`Gamble win bonus: +${formatPercent(PET_GAMBLER_WIN_BONUS[active.rarity] * 100)} (wins only)`);
+      }
+      if (active.petType === 'Event') {
+        activePetBonuses.push(`Egg event win bonus: +${PET_EVENT_BONUS[active.rarity]} Molgium`);
+      }
+    }
+    const missionStates = MISSION_DEFINITIONS.map((mission) => ({
+      mission,
+      state: this.missionProgress(user.id, mission)
+    }));
+    const dailyMissions = missionStates.filter((entry) => entry.mission.period === 'daily');
+    const weeklyMissions = missionStates.filter((entry) => entry.mission.period === 'weekly');
     const owned = db.select().from(petsOwned).where(eq(petsOwned.userId, user.id)).all();
     const rarest =
       owned
@@ -2926,9 +3316,12 @@ export class MolgianService {
       balance: wallet?.amount ?? 0,
       salaryBase: user.salaryBase,
       workReady: !isSameWorkWindow(user.lastWorkAt ?? null, nowMs(), appEnv.TIMEZONE, DAILY_RESET_HOUR),
+      workStreak: streak,
+      workStreakBonusPct: streakBonusPct * 100,
       activePet: active
         ? `${active.generatedName} - ${active.rarity} ${active.petType} (#${active.petInstanceId})`
         : 'None',
+      activePetBonuses,
       eggs: eggs?.eggs ?? 0,
       mythicEggs: eggs?.mythicEggs ?? 0,
       shards: this.getShardDisplayAmount(user.id),
@@ -2937,6 +3330,10 @@ export class MolgianService {
         badge: loadoutRow?.badgeId ?? null,
         frame: loadoutRow?.frameId ?? null
       },
+      dailyMissionsCompleted: dailyMissions.filter((entry) => entry.state.completed).length,
+      dailyMissionsTotal: dailyMissions.length,
+      weeklyMissionsCompleted: weeklyMissions.filter((entry) => entry.state.completed).length,
+      weeklyMissionsTotal: weeklyMissions.length,
       lifetimeEggsHatched: user.lifetimeEggsHatched,
       rarestPetOwned: rarest,
       rarestFishOwned: rarestFish ? `${rarestFish.displayName} [${rarestFish.rarity}]` : 'None'
@@ -3001,17 +3398,42 @@ export class MolgianService {
     });
   }
 
-  public hof(): Array<{ username: string; petType: string; rarity: string; hatchedAt: number }> {
-    const rows = db.select().from(mythicHallOfFame).orderBy(desc(mythicHallOfFame.hatchedAt)).limit(20).all();
-    return rows.map((row) => {
-      const user = db.select().from(users).where(eq(users.id, row.userId)).get();
-      return {
-        username: user?.username ?? `user-${row.userId}`,
-        petType: row.petType,
-        rarity: row.rarity,
-        hatchedAt: row.hatchedAt
-      };
-    });
+  public hof(): Array<{ username: string; entry: string; rarity: string; at: number }> {
+    const petRows = db
+      .select()
+      .from(mythicHallOfFame)
+      .orderBy(desc(mythicHallOfFame.hatchedAt))
+      .limit(20)
+      .all();
+    const fishRows = db
+      .select()
+      .from(fishHallOfFame)
+      .orderBy(desc(fishHallOfFame.recordedAt))
+      .limit(20)
+      .all();
+
+    const combined = [
+      ...petRows.map((row) => {
+        const user = db.select().from(users).where(eq(users.id, row.userId)).get();
+        return {
+          username: user?.username ?? `user-${row.userId}`,
+          entry: `Pet Hatch - ${row.rarity} ${row.petType}`,
+          rarity: row.rarity,
+          at: row.hatchedAt
+        };
+      }),
+      ...fishRows.map((row) => {
+        const user = db.select().from(users).where(eq(users.id, row.userId)).get();
+        return {
+          username: user?.username ?? `user-${row.userId}`,
+          entry: `Fish Catch - ${row.fishName}`,
+          rarity: row.rarity,
+          at: row.recordedAt
+        };
+      })
+    ];
+
+    return combined.sort((a, b) => b.at - a.at).slice(0, 20);
   }
 
   public async adminGiveMolgium(discordId: string, amount: number): Promise<{ ok: boolean; message: string }> {

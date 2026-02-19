@@ -56,6 +56,9 @@ const editReplyWithEmbed = async (
   });
 };
 
+const formatShardValue = (amount: number): string =>
+  Number.isInteger(amount) ? `${amount}` : amount.toFixed(1);
+
 const COINFLIP_ANIMATION_FRAMES = ['Coin tossed...', 'Coin spinning...', 'Coin landing...'];
 const ANIMATION_STEP_MS = 450;
 const PURGE_OLD_DELETE_DELAY_MS = 150;
@@ -349,7 +352,7 @@ export const handleInteraction = async (
 
   if (interaction.commandName === 'shards') {
     const amount = await services.game.shardsView(discordId, username);
-    await replyWithEmbed(interaction, `Shards: ${amount}`, { title: 'Shards' });
+    await replyWithEmbed(interaction, `Shards: ${formatShardValue(amount)}`, { title: 'Shards' });
     return;
   }
 
@@ -362,9 +365,50 @@ export const handleInteraction = async (
     return;
   }
 
+  if (interaction.commandName === 'missions') {
+    const sub = interaction.options.getSubcommand(true);
+    if (sub === 'view') {
+      const data = await services.game.missionsView(discordId, username);
+      const formatEntry = (entry: {
+        id: string;
+        label: string;
+        progress: number;
+        target: number;
+        completed: boolean;
+        claimed: boolean;
+      }): string => {
+        const status = entry.claimed ? 'CLAIMED' : entry.completed ? 'READY' : 'IN PROGRESS';
+        return `- ${entry.id}: ${entry.label} (${entry.progress}/${entry.target}) [${status}]`;
+      };
+      const lines = [
+        `Daily (${data.dailyKey}):`,
+        ...data.daily.map(formatEntry),
+        '',
+        `Weekly (${data.weeklyKey}):`,
+        ...data.weekly.map(formatEntry),
+        '',
+        'Rewards per mission claim: random 0.1 to 0.5 shards.'
+      ];
+      await replyWithEmbed(interaction, lines.join('\n'), { title: 'Missions' });
+      return;
+    }
+
+    const missionId = interaction.options.getString('id', true);
+    const result = await services.game.missionClaim(discordId, username, missionId);
+    await replyWithEmbed(interaction, result.message, {
+      tone: result.ok ? 'success' : 'warning',
+      title: 'Mission Claim'
+    });
+    return;
+  }
+
   if (interaction.commandName === 'profile') {
     const targetUser = interaction.options.getUser('user') ?? interaction.user;
     const profile = await services.game.profile(targetUser.id, targetUser.username);
+    const passiveLines =
+      profile.activePetBonuses.length > 0
+        ? profile.activePetBonuses.map((line) => `- ${line}`).join('\n')
+        : '- none';
     await replyWithEmbed(
       interaction,
       [
@@ -372,9 +416,12 @@ export const handleInteraction = async (
         `Balance: ${profile.balance}`,
         `SalaryBase: ${profile.salaryBase}`,
         `Work cooldown: ${profile.workReady ? 'Ready' : 'Not ready'}`,
+        `Work streak: ${profile.workStreak} (+${profile.workStreakBonusPct.toFixed(1)}% /work payout)`,
         `Active pet: ${profile.activePet}`,
+        `Active pet boosts:\n${passiveLines}`,
         `Eggs: ${profile.eggs} (Mythic eggs: ${profile.mythicEggs})`,
-        `Shards: ${profile.shards}`,
+        `Shards: ${formatShardValue(profile.shards)}`,
+        `Missions: daily ${profile.dailyMissionsCompleted}/${profile.dailyMissionsTotal}, weekly ${profile.weeklyMissionsCompleted}/${profile.weeklyMissionsTotal}`,
         `Loadout: title=${profile.loadout.title ?? 'none'}, badge=${profile.loadout.badge ?? 'none'}, frame=${profile.loadout.frame ?? 'none'}`,
         `Lifetime eggs hatched: ${profile.lifetimeEggsHatched}`,
         `Rarest pet owned: ${profile.rarestPetOwned}`,
@@ -402,9 +449,9 @@ export const handleInteraction = async (
     const rows = services.game.hof();
     const text =
       rows.length === 0
-        ? 'No Mythic hatches recorded yet.'
+        ? 'No Hall of Fame records yet.'
         : rows
-            .map((row, index) => `${index + 1}. ${row.username} - ${row.rarity} ${row.petType}`)
+            .map((row, index) => `${index + 1}. ${row.username} - ${row.entry} [${row.rarity}]`)
             .join('\n');
     await replyWithEmbed(interaction, text, { title: 'Hall of Fame' });
     return;

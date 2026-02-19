@@ -4,7 +4,7 @@ import { FISH_RARITY_BASE_WEIGHTS, ROD_CONFIG } from './gameConfig.js';
 import type { Rarity, RodTier } from '../db/schema.js';
 import { weightedPick } from '../utils/random.js';
 
-const FISH_RARITY_ORDER: FishRarity[] = ['Trash', 'Common', 'Rare', 'Epic', 'Legendary', 'Mythic'];
+const FISH_RARITY_ORDER: FishRarity[] = ['Trash', 'Common', 'Rare', 'Epic', 'Legendary', 'Mythic', 'God'];
 const PET_RARITY_ORDER: Rarity[] = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 
 export const rollHatchRarity = (isMythicEgg: boolean): Rarity => {
@@ -26,7 +26,9 @@ export const rollFishRarity = (rodTier: RodTier, trashRemoved: boolean): FishRar
   >) {
     if (trashRemoved && rarity === 'Trash') continue;
     const weight = rarity === 'Trash' ? baseWeight * rod.trashWeightMultiplier : baseWeight;
-    weights.push({ item: rarity, weight });
+    if (weight > 0) {
+      weights.push({ item: rarity, weight });
+    }
   }
   return weightedPick(weights);
 };

@@ -7,7 +7,7 @@ export const users = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     discordId: text('discord_id').notNull().unique(),
     username: text('username').notNull(),
-    salaryBase: integer('salary_base').notNull().default(100),
+    salaryBase: integer('salary_base').notNull().default(150),
     lastWorkAt: integer('last_work_at'),
     xp: integer('xp').notNull().default(0),
     level: integer('level').notNull().default(1),
@@ -273,6 +273,29 @@ export const mythicHallOfFame = sqliteTable(
   },
   (table) => ({
     hatchedIdx: index('mythic_hof_hatched_idx').on(table.hatchedAt)
+  })
+);
+
+export const fishHallOfFame = sqliteTable(
+  'fish_hall_of_fame',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    catchId: integer('catch_id')
+      .notNull()
+      .references(() => fishCatches.id, { onDelete: 'cascade' }),
+    fishKey: text('fish_key').notNull(),
+    fishName: text('fish_name').notNull(),
+    rarity: text('rarity').notNull(),
+    channelId: text('channel_id').notNull(),
+    recordedAt: integer('recorded_at').notNull()
+  },
+  (table) => ({
+    catchUnique: unique('fish_hof_catch_unique').on(table.catchId),
+    rarityIdx: index('fish_hof_rarity_idx').on(table.rarity),
+    recordedIdx: index('fish_hof_recorded_idx').on(table.recordedAt)
   })
 );
 

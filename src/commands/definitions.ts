@@ -200,6 +200,29 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
     .setDescription('Craft high-tier items.')
     .addSubcommand((sub) => sub.setName('mythic_egg').setDescription('Craft one Mythic Egg (250 shards).')),
   new SlashCommandBuilder()
+    .setName('missions')
+    .setDescription('View and claim daily/weekly missions.')
+    .addSubcommand((sub) => sub.setName('view').setDescription('View mission progress.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('claim')
+        .setDescription('Claim a completed mission reward.')
+        .addStringOption((opt) =>
+          opt
+            .setName('id')
+            .setDescription('Mission ID')
+            .setRequired(true)
+            .addChoices(
+              { name: 'daily_cast_5', value: 'daily_cast_5' },
+              { name: 'daily_gamble_3', value: 'daily_gamble_3' },
+              { name: 'daily_work_1', value: 'daily_work_1' },
+              { name: 'weekly_sell_40', value: 'weekly_sell_40' },
+              { name: 'weekly_hatch_8', value: 'weekly_hatch_8' },
+              { name: 'weekly_gamble_win_12', value: 'weekly_gamble_win_12' }
+            )
+        )
+    ),
+  new SlashCommandBuilder()
     .setName('profile')
     .setDescription('View your profile or another user profile.')
     .addUserOption((opt) =>
@@ -220,7 +243,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
           { name: 'top_fish_value', value: 'top_fish_value' }
         )
     ),
-  new SlashCommandBuilder().setName('hof').setDescription('View Mythic Hall of Fame history.'),
+  new SlashCommandBuilder().setName('hof').setDescription('View Hall of Fame history.'),
   new SlashCommandBuilder()
     .setName('wiki')
     .setDescription('Open Molgian Bureau Fandom wiki links.')

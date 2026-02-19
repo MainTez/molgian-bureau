@@ -87,6 +87,8 @@ Core:
 - `/work`
 - `/job list`
 - `/job apply id:<1|2|3>`
+- Job costs: `500`, `1000`, `2000`
+- Base salary: `150 Molgium`
 - `/profile`
 - `/profile user:@user` (optional target)
 - `/leaderboard mode:<richest|most_eggs_hatched|most_mythics|top_fish_value>`
@@ -130,6 +132,8 @@ Eggs/pets:
 - `/pet sell pet_instance_id:<id>`
 - `/shards`
 - `/forge mythic_egg`
+- `/missions view`
+- `/missions claim id:<mission_id>`
 - `/hof`
 - `/wiki home`
 - `/wiki page title:<name>`
@@ -147,6 +151,8 @@ Admin:
 - Daily reset: `06:00 Europe/Oslo`
 - `/work` once per reset window
 - `/work` has a 1% robbery chance (you get 0 payout for that day)
+- Base salary is `150 Molgium` (before pet/event multipliers)
+- `/work` includes a streak bonus (`+3%` per streak day, capped at `+30%`)
 - Egg target: 6 wins/day server-wide
 - No egg buying
 - No item durability
@@ -160,6 +166,10 @@ Admin:
 - Micro events are treasury-aware: when Treasury is empty, bot auto-runs refill-safe events (`tax_audit`/`pickpocket`) instead of dead payout events.
 - Event pings mention `@Citizens` role only (not `@everyone`)
 - Admins can post/refresh a `#Immigration-Center` panel via `/admin post-citizens-panel` for self-assigning `Citizens`
+- Hall of Fame now includes Mythic pet hatches plus Mythic/God fish catches
+- Treasury drip: `5%` from fish sell payouts and `5%` from gambling losses
+- Daily and weekly missions are available via `/missions` with shard rewards between `0.1` and `0.5`
+- `/profile` now shows exact active pet passive numbers and current work streak bonus
 
 ## 6. Tests
 
