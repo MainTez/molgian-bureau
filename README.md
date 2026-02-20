@@ -208,8 +208,10 @@ Admin:
 - Event pings mention `@Citizens` role only (not `@everyone`)
 - Admins can post/refresh a `#Immigration-Center` panel via `/admin post-citizens-panel` for self-assigning `Citizens`
 - Hall of Fame now includes Mythic pet hatches plus Mythic/God fish catches
-- Treasury drip: `5%` from fish sell payouts and `5%` from gambling losses
-- Daily and weekly missions are available via `/missions` with shard rewards between `0.1` and `0.5`
+- Sell tax: `20%` from fish sell payouts to Treasury
+- Gamble loss tax: `25%` of lost amount to Treasury
+- Weekly Treasury tax: `20%` from all wallets (once per week, Europe/Oslo week window)
+- Daily and weekly missions are available via `/missions` with rewards of `0.1-0.5` shards + Molgium (daily `50-150`, weekly `300-700`)
 - `/profile` now shows exact active pet passive numbers and current work streak bonus
 - Non-egg events are throttled by a global cooldown to prevent event spam
 

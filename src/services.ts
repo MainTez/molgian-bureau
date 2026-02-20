@@ -48,6 +48,7 @@ import {
   SHARD_VALUES,
   TREASURY_DRIP_FISH_SELL_RATE,
   TREASURY_DRIP_GAMBLE_LOSS_RATE,
+  WEEKLY_TREASURY_WALLET_TAX_RATE,
   WORK_ROBBERY_CHANCE,
   WORK_STREAK_BONUS_CAP,
   WORK_STREAK_BONUS_PER_DAY,
@@ -157,6 +158,10 @@ const speedTypePrompts = [
   'No eggs for cowards'
 ];
 const MISSION_SHARD_REWARD_TENTHS = [1, 2, 3, 4, 5] as const;
+const MISSION_MOLGIUM_REWARD_RANGE: Record<MissionPeriod, readonly [number, number]> = {
+  daily: [50, 150],
+  weekly: [300, 700]
+};
 const MISSION_DEFINITIONS: MissionDefinition[] = [
   { id: 'daily_cast_5', period: 'daily', metric: 'fish_cast', target: 5, label: 'Cast 5 fish' },
   { id: 'daily_gamble_3', period: 'daily', metric: 'gamble_play', target: 3, label: 'Play 3 gambles' },
@@ -393,6 +398,8 @@ export class MolgianService {
 
   private jackpotInterval: NodeJS.Timeout | null = null;
 
+  private weeklyTaxInterval: NodeJS.Timeout | null = null;
+
   public async initialize(client: Client): Promise<void> {
     this.client = client;
     const { GUILD_ID } = getDiscordEnv();
@@ -414,6 +421,7 @@ export class MolgianService {
     if (this.microTimer) clearTimeout(this.microTimer);
     if (this.eggInterval) clearInterval(this.eggInterval);
     if (this.jackpotInterval) clearInterval(this.jackpotInterval);
+    if (this.weeklyTaxInterval) clearInterval(this.weeklyTaxInterval);
   }
 
   public noteUserActive(discordId: string): void {
@@ -853,6 +861,55 @@ export class MolgianService {
     return db.select().from(treasury).where(eq(treasury.id, 1)).get()?.amount ?? 0;
   }
 
+  private weeklyTreasuryTaxWeekKey(): string {
+    return 'tax:weekly_wallet_20:last_week_key';
+  }
+
+  private async applyWeeklyTreasuryTaxIfDue(): Promise<void> {
+    const weekKey = this.currentWeekKey();
+    const previousWeekKey = this.getState(this.weeklyTreasuryTaxWeekKey());
+    if (previousWeekKey === weekKey) return;
+    if (!previousWeekKey) {
+      this.setState(this.weeklyTreasuryTaxWeekKey(), weekKey);
+      return;
+    }
+
+    let collected = 0;
+    let taxedUsers = 0;
+    db.transaction((tx) => {
+      const wallets = tx.select().from(balances).all();
+      const treasuryRow = tx.select().from(treasury).where(eq(treasury.id, 1)).get();
+      if (!treasuryRow) throw new Error('Treasury missing');
+
+      for (const wallet of wallets) {
+        if (wallet.amount <= 0) continue;
+        const tax = Math.floor(wallet.amount * WEEKLY_TREASURY_WALLET_TAX_RATE);
+        if (tax <= 0) continue;
+        tx.update(balances).set({ amount: wallet.amount - tax }).where(eq(balances.userId, wallet.userId)).run();
+        collected += tax;
+        taxedUsers += 1;
+      }
+
+      if (collected > 0) {
+        tx
+          .update(treasury)
+          .set({ amount: treasuryRow.amount + collected, updatedAt: nowMs() })
+          .where(eq(treasury.id, 1))
+          .run();
+      }
+    });
+
+    this.setState(this.weeklyTreasuryTaxWeekKey(), weekKey);
+
+    if (collected > 0) {
+      await this.sendEventPing(
+        `Weekly Treasury Tax: collected ${collected} Molgium total (${Math.round(
+          WEEKLY_TREASURY_WALLET_TAX_RATE * 100
+        )}% from ${taxedUsers} wallets).`
+      );
+    }
+  }
+
   private getWorkStreakCount(userId: number): number {
     const raw = this.getStateNumber(this.workStreakCountKey(userId));
     if (!raw || raw < 0) return 0;
@@ -988,6 +1045,9 @@ export class MolgianService {
     if (state.claimed) return { ok: false, message: 'Mission already claimed for this period.' };
 
     const rewardTenths = pickRandom(MISSION_SHARD_REWARD_TENTHS);
+    const [minMolgium, maxMolgium] = MISSION_MOLGIUM_REWARD_RANGE[mission.period];
+    const molgiumReward = randomIntInclusive(minMolgium, maxMolgium);
+    const newBalance = this.changeBalance(user.id, molgiumReward);
     this.addShardsTenths(user.id, rewardTenths);
     this.setState(this.missionClaimedKey(user.id, mission.id, state.periodKey), '1');
 
@@ -995,7 +1055,8 @@ export class MolgianService {
       ok: true,
       message:
         `Mission claimed: ${mission.label}. ` +
-        `Reward: ${this.formatShardAmount(rewardTenths / 10)} shards.`
+        `Reward: ${this.formatShardAmount(rewardTenths / 10)} shards + ${molgiumReward} Molgium. ` +
+        `New balance: ${newBalance} Molgium.`
     };
   }
 
@@ -1564,7 +1625,7 @@ export class MolgianService {
         message:
           `Sold ${unsoldRows.length} catches for ${payoutAfterDrip} Molgium` +
           `${fisherBonusTotal > 0 ? ` (${baseTotal} + ${fisherBonusTotal} Fisher bonus)` : ''}. ` +
-          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+          `${treasuryDrip > 0 ? `Sell tax: ${Math.round(TREASURY_DRIP_FISH_SELL_RATE * 100)}% (+${treasuryDrip} Treasury). ` : ''}` +
           `New balance: ${finalBalance} Molgium.`
       };
     }
@@ -1614,7 +1675,7 @@ export class MolgianService {
       message:
         `Sold catch ${row.id} for ${payoutAfterDrip} Molgium` +
         `${fisherBonus > 0 ? ` (${row.finalValue} + ${fisherBonus} Fisher bonus)` : ''}. ` +
-        `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+        `${treasuryDrip > 0 ? `Sell tax: ${Math.round(TREASURY_DRIP_FISH_SELL_RATE * 100)}% (+${treasuryDrip} Treasury). ` : ''}` +
         `New balance: ${finalBalance} Molgium.`
     };
   }
@@ -2034,7 +2095,7 @@ export class MolgianService {
         ok: true,
         message:
           `Coinflip loss. Lost ${amount} Molgium. ` +
-          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+          `${treasuryDrip > 0 ? `Loss tax: ${Math.round(TREASURY_DRIP_GAMBLE_LOSS_RATE * 100)}% (+${treasuryDrip} Treasury). ` : ''}` +
           `New balance: ${postBetBalance} Molgium.`
       };
     }
@@ -2073,7 +2134,7 @@ export class MolgianService {
         ok: true,
         message:
           `Dice loss (${player} vs ${house}). Lost ${amount}. ` +
-          `${treasuryDrip > 0 ? `Treasury drip: +${treasuryDrip}. ` : ''}` +
+          `${treasuryDrip > 0 ? `Loss tax: ${Math.round(TREASURY_DRIP_GAMBLE_LOSS_RATE * 100)}% (+${treasuryDrip} Treasury). ` : ''}` +
           `New balance: ${postBetBalance} Molgium.`
       };
     }
@@ -2233,12 +2294,16 @@ export class MolgianService {
   private startSchedulers(): void {
     this.scheduleMajor();
     this.scheduleMicro();
+    void this.applyWeeklyTreasuryTaxIfDue();
     this.eggInterval = setInterval(() => {
       void this.tickEggSpawner();
     }, 20_000);
     this.jackpotInterval = setInterval(() => {
       void this.resolveJackpotIfReady();
     }, 30_000);
+    this.weeklyTaxInterval = setInterval(() => {
+      void this.applyWeeklyTreasuryTaxIfDue();
+    }, 60_000);
   }
 
   private scheduleMajor(): void {
@@ -2345,11 +2410,12 @@ export class MolgianService {
       '',
       '- Events and Treasury:',
       '  - Added global anti-spam cooldown between non-egg events.',
-      '  - Treasury drip added: +5% from fish sells and +5% from gamble losses.',
+      '  - Sell tax is now 20% and gamble loss tax is now 25% (to Treasury).',
+      '  - Weekly Treasury tax applies 20% wallet tax server-wide.',
       '',
       '- Missions:',
       '  - Added daily and weekly missions.',
-      '  - Mission rewards are random 0.1 to 0.5 shards.',
+      '  - Mission rewards are random 0.1 to 0.5 shards + Molgium.',
       '  - New commands: /missions view and /missions claim.',
       '',
       '- Profiles:',

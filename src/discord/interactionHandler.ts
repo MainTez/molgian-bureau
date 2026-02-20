@@ -387,7 +387,7 @@ export const handleInteraction = async (
         `Weekly (${data.weeklyKey}):`,
         ...data.weekly.map(formatEntry),
         '',
-        'Rewards per mission claim: random 0.1 to 0.5 shards.'
+        'Rewards per mission claim: random 0.1 to 0.5 shards + Molgium (daily 50-150, weekly 300-700).'
       ];
       await replyWithEmbed(interaction, lines.join('\n'), { title: 'Missions' });
       return;

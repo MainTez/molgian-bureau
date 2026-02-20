@@ -4,8 +4,9 @@ export const BOT_NAME = 'Molgian Bureau';
 export const CURRENCY_NAME = 'Molgium';
 export const DAILY_RESET_HOUR = 6;
 export const WORK_ROBBERY_CHANCE = 0.01;
-export const TREASURY_DRIP_FISH_SELL_RATE = 0.05;
-export const TREASURY_DRIP_GAMBLE_LOSS_RATE = 0.05;
+export const TREASURY_DRIP_FISH_SELL_RATE = 0.2;
+export const TREASURY_DRIP_GAMBLE_LOSS_RATE = 0.25;
+export const WEEKLY_TREASURY_WALLET_TAX_RATE = 0.2;
 export const WORK_STREAK_BONUS_PER_DAY = 0.03;
 export const WORK_STREAK_BONUS_CAP = 0.3;
 
