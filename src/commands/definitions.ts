@@ -5,11 +5,81 @@ import {
   type SlashCommandSubcommandsOnlyBuilder
 } from 'discord.js';
 import { PET_TYPES, RARITIES, ROD_TIERS } from '../db/schema.js';
+import {
+  BASE_CLASS_DEFINITIONS,
+  RAID_BOSSES,
+  type BaseClassKey,
+  type ClassQuizGoal,
+  type ClassQuizStyle,
+  type ClassQuizVibe,
+  type RaidDifficultyKey,
+  type ShopCategory
+} from '../domain/endgame.js';
 
 type SupportedBuilder =
   | SlashCommandBuilder
   | SlashCommandSubcommandsOnlyBuilder
   | SlashCommandOptionsOnlyBuilder;
+
+const classPathChoices = BASE_CLASS_DEFINITIONS.flatMap((entry) =>
+  entry.paths.map((path) => ({
+    name: `${entry.name} -> ${path.name}`,
+    value: path.key
+  }))
+);
+
+const classMainChoices = BASE_CLASS_DEFINITIONS.map((entry) => ({
+  name: entry.name,
+  value: entry.key
+}));
+
+const shopCategoryChoices: Array<{ name: string; value: ShopCategory }> = [
+  { name: 'weapons', value: 'weapons' },
+  { name: 'armor', value: 'armor' },
+  { name: 'materials', value: 'materials' },
+  { name: 'rods', value: 'rods' },
+  { name: 'jobs', value: 'jobs' }
+];
+
+const classQuizStyleChoices: Array<{ name: string; value: ClassQuizStyle }> = [
+  { name: 'aggressive', value: 'aggressive' },
+  { name: 'defensive', value: 'defensive' },
+  { name: 'trickster', value: 'trickster' },
+  { name: 'support', value: 'support' },
+  { name: 'balanced', value: 'balanced' }
+];
+
+const classQuizGoalChoices: Array<{ name: string; value: ClassQuizGoal }> = [
+  { name: 'wealth', value: 'wealth' },
+  { name: 'raids', value: 'raids' },
+  { name: 'fishing', value: 'fishing' },
+  { name: 'events', value: 'events' },
+  { name: 'hybrid', value: 'hybrid' }
+];
+
+const classQuizVibeChoices: Array<{ name: string; value: ClassQuizVibe }> = [
+  { name: 'lawful', value: 'lawful' },
+  { name: 'chaotic', value: 'chaotic' },
+  { name: 'mystic', value: 'mystic' },
+  { name: 'tech', value: 'tech' },
+  { name: 'hunter', value: 'hunter' }
+];
+
+const raidDifficultyChoices: Array<{ name: string; value: RaidDifficultyKey }> = [
+  { name: 'normal', value: 'normal' },
+  { name: 'hard', value: 'hard' },
+  { name: 'nightmare', value: 'nightmare' },
+  { name: 'infernal', value: 'infernal' }
+];
+
+const gearSlotChoices = [
+  { name: 'weapon', value: 'weapon' },
+  { name: 'helmet', value: 'helmet' },
+  { name: 'chest', value: 'chest' },
+  { name: 'gloves', value: 'gloves' },
+  { name: 'boots', value: 'boots' },
+  { name: 'relic', value: 'relic' }
+] as const;
 
 export const slashCommandDefinitions: SupportedBuilder[] = [
   new SlashCommandBuilder().setName('work').setDescription('Claim your daily Molgium salary.'),
@@ -27,37 +97,164 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
     ),
   new SlashCommandBuilder()
     .setName('shop')
-    .setDescription('View the current shop or buy a rotating cosmetic.')
-    .addStringOption((opt) =>
-      opt.setName('buy_id').setDescription('Optional rotating cosmetic id to buy').setRequired(false)
+    .setDescription('Browse categories and buy gear/materials.')
+    .addSubcommand((sub) => sub.setName('view').setDescription('View available shop categories.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('category')
+        .setDescription('View all offers in one category.')
+        .addStringOption((opt) =>
+          opt
+            .setName('type')
+            .setDescription('Category')
+            .setRequired(true)
+            .addChoices(...shopCategoryChoices)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('buy')
+        .setDescription('Buy a shop item by id.')
+        .addStringOption((opt) =>
+          opt.setName('item_id').setDescription('Item id from /shop category').setRequired(true)
+        )
+        .addIntegerOption((opt) =>
+          opt.setName('quantity').setDescription('Quantity').setRequired(false).setMinValue(1).setMaxValue(999)
+        )
     ),
   new SlashCommandBuilder()
-    .setName('loadout')
-    .setDescription('View or set your cosmetic loadout.')
-    .addSubcommand((sub) => sub.setName('view').setDescription('View current loadout.'))
-    .addSubcommandGroup((group) =>
-      group
-        .setName('set')
-        .setDescription('Set loadout slot.')
-        .addSubcommand((sub) =>
-          sub
-            .setName('title')
-            .setDescription('Set title cosmetic.')
-            .addStringOption((opt) => opt.setName('id').setDescription('Cosmetic ID').setRequired(true))
+    .setName('class')
+    .setDescription('Manage your class path progression.')
+    .addSubcommand((sub) => sub.setName('list').setDescription('View base classes and paths.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('quiz')
+        .setDescription('Get a class recommendation.')
+        .addStringOption((opt) =>
+          opt
+            .setName('style')
+            .setDescription('How you like to play')
+            .setRequired(true)
+            .addChoices(...classQuizStyleChoices)
         )
-        .addSubcommand((sub) =>
-          sub
-            .setName('badge')
-            .setDescription('Set badge cosmetic.')
-            .addStringOption((opt) => opt.setName('id').setDescription('Cosmetic ID').setRequired(true))
+        .addStringOption((opt) =>
+          opt
+            .setName('goal')
+            .setDescription('What you care about most')
+            .setRequired(true)
+            .addChoices(...classQuizGoalChoices)
         )
-        .addSubcommand((sub) =>
-          sub
-            .setName('frame')
-            .setDescription('Set frame cosmetic.')
-            .addStringOption((opt) => opt.setName('id').setDescription('Cosmetic ID').setRequired(true))
+        .addStringOption((opt) =>
+          opt
+            .setName('vibe')
+            .setDescription('Your preferred fantasy')
+            .setRequired(true)
+            .addChoices(...classQuizVibeChoices)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('choose')
+        .setDescription('Buy and choose your base class.')
+        .addStringOption((opt) =>
+          opt
+            .setName('main')
+            .setDescription('Base class')
+            .setRequired(true)
+            .addChoices(...classMainChoices)
+        )
+    )
+    .addSubcommand((sub) => sub.setName('path').setDescription('View your current class path.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('advance')
+        .setDescription('Select your T2 path (locks T3 specialization).')
+        .addStringOption((opt) =>
+          opt
+            .setName('path')
+            .setDescription('T2 path choice')
+            .setRequired(true)
+            .addChoices(...classPathChoices)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('reset')
+        .setDescription('Reset class progression at high cost.')
+        .addBooleanOption((opt) =>
+          opt.setName('confirm').setDescription('Type true to confirm reset').setRequired(true)
         )
     ),
+  new SlashCommandBuilder()
+    .setName('gear')
+    .setDescription('Manage your gear inventory and equipment.')
+    .addSubcommand((sub) => sub.setName('inventory').setDescription('View owned gear.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('equip')
+        .setDescription('Equip a gear item to a slot.')
+        .addStringOption((opt) =>
+          opt
+            .setName('slot')
+            .setDescription('Gear slot')
+            .setRequired(true)
+            .addChoices(...gearSlotChoices)
+        )
+        .addIntegerOption((opt) =>
+          opt.setName('gear_id').setDescription('Gear instance id').setRequired(true).setMinValue(1)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('unequip')
+        .setDescription('Unequip one gear slot.')
+        .addStringOption((opt) =>
+          opt
+            .setName('slot')
+            .setDescription('Gear slot')
+            .setRequired(true)
+            .addChoices(...gearSlotChoices)
+        )
+    ),
+  new SlashCommandBuilder()
+    .setName('raid')
+    .setDescription('Create and run co-op raid lobbies.')
+    .addSubcommand((sub) =>
+      sub
+        .setName('create')
+        .setDescription('Create a new raid lobby.')
+        .addStringOption((opt) =>
+          opt
+            .setName('boss')
+            .setDescription('Boss target')
+            .setRequired(true)
+            .addChoices(...RAID_BOSSES.map((entry) => ({ name: entry.name, value: entry.key })))
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('difficulty')
+            .setDescription('Raid difficulty')
+            .setRequired(true)
+            .addChoices(...raidDifficultyChoices)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('join')
+        .setDescription('Join an active raid lobby by code.')
+        .addStringOption((opt) =>
+          opt
+            .setName('code')
+            .setDescription('Lobby code')
+            .setRequired(true)
+            .setMinLength(4)
+            .setMaxLength(12)
+        )
+    )
+    .addSubcommand((sub) => sub.setName('leave').setDescription('Leave your current raid lobby.'))
+    .addSubcommand((sub) => sub.setName('start').setDescription('Start your owned raid lobby.'))
+    .addSubcommand((sub) => sub.setName('status').setDescription('View your current raid lobby status.'))
+    .addSubcommand((sub) => sub.setName('history').setDescription('View your recent raid history.')),
   new SlashCommandBuilder()
     .setName('rod')
     .setDescription('Buy and equip fishing rods.')
@@ -197,7 +394,33 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
   new SlashCommandBuilder().setName('shards').setDescription('View your current shard count.'),
   new SlashCommandBuilder()
     .setName('forge')
-    .setDescription('Craft high-tier items.')
+    .setDescription('Craft and manage endgame equipment.')
+    .addSubcommand((sub) => sub.setName('materials').setDescription('View your crafting materials.'))
+    .addSubcommand((sub) => sub.setName('recipes').setDescription('View forge recipes.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('preview')
+        .setDescription('Preview a forge recipe.')
+        .addStringOption((opt) =>
+          opt.setName('recipe_id').setDescription('Recipe id from /forge recipes').setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('craft')
+        .setDescription('Craft one forge recipe.')
+        .addStringOption((opt) =>
+          opt.setName('recipe_id').setDescription('Recipe id from /forge recipes').setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('salvage')
+        .setDescription('Salvage a gear item for materials.')
+        .addIntegerOption((opt) =>
+          opt.setName('gear_id').setDescription('Gear instance id').setRequired(true).setMinValue(1)
+        )
+    )
     .addSubcommand((sub) => sub.setName('mythic_egg').setDescription('Craft one Mythic Egg (250 shards).')),
   new SlashCommandBuilder()
     .setName('missions')
@@ -225,9 +448,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
   new SlashCommandBuilder()
     .setName('profile')
     .setDescription('View your profile or another user profile.')
-    .addUserOption((opt) =>
-      opt.setName('user').setDescription('Optional user to view').setRequired(false)
-    ),
+    .addUserOption((opt) => opt.setName('user').setDescription('Optional user to view').setRequired(false)),
   new SlashCommandBuilder()
     .setName('leaderboard')
     .setDescription('View a leaderboard.')
@@ -248,22 +469,13 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
   new SlashCommandBuilder()
     .setName('wiki')
     .setDescription('Open Molgian Bureau Fandom wiki links.')
-    .addSubcommand((sub) =>
-      sub
-        .setName('home')
-        .setDescription('Open the Fandom wiki home link.')
-    )
+    .addSubcommand((sub) => sub.setName('home').setDescription('Open the Fandom wiki home link.'))
     .addSubcommand((sub) =>
       sub
         .setName('page')
         .setDescription('Open a specific wiki page.')
         .addStringOption((opt) =>
-          opt
-            .setName('title')
-            .setDescription('Page title')
-            .setRequired(true)
-            .setMinLength(2)
-            .setMaxLength(80)
+          opt.setName('title').setDescription('Page title').setRequired(true).setMinLength(2).setMaxLength(80)
         )
     )
     .addSubcommand((sub) =>
@@ -271,12 +483,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
         .setName('search')
         .setDescription('Search your Fandom wiki.')
         .addStringOption((opt) =>
-          opt
-            .setName('query')
-            .setDescription('Search text')
-            .setRequired(true)
-            .setMinLength(2)
-            .setMaxLength(80)
+          opt.setName('query').setDescription('Search text').setRequired(true).setMinLength(2).setMaxLength(80)
         )
     ),
   new SlashCommandBuilder()
@@ -300,9 +507,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
         .setName('give-molgium')
         .setDescription('Give Molgium to a user.')
         .addUserOption((opt) => opt.setName('user').setDescription('Target user').setRequired(true))
-        .addIntegerOption((opt) =>
-          opt.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)
-        )
+        .addIntegerOption((opt) => opt.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1))
     )
     .addSubcommand((sub) =>
       sub
@@ -339,9 +544,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
       sub
         .setName('set-treasury')
         .setDescription('Set treasury to exact amount.')
-        .addIntegerOption((opt) =>
-          opt.setName('amount').setDescription('Amount').setRequired(true).setMinValue(0)
-        )
+        .addIntegerOption((opt) => opt.setName('amount').setDescription('Amount').setRequired(true).setMinValue(0))
     )
     .addSubcommand((sub) =>
       sub
@@ -354,5 +557,9 @@ export const commandJson = slashCommandDefinitions.map((command) => command.toJS
 
 export const isValidPetType = (value: string): value is (typeof PET_TYPES)[number] =>
   PET_TYPES.includes(value as (typeof PET_TYPES)[number]);
+
 export const isValidRarity = (value: string): value is (typeof RARITIES)[number] =>
   RARITIES.includes(value as (typeof RARITIES)[number]);
+
+export const isValidClassMain = (value: string): value is BaseClassKey =>
+  classMainChoices.some((entry) => entry.value === value);

@@ -42,7 +42,6 @@ import {
   PET_WORKER_MULTIPLIER,
   RAISE_TIERS,
   ROD_CONFIG,
-  ROTATING_SHOP_SIZE,
   SELL_VALUES,
   SHARD_VALUES,
   TREASURY_DRIP_FISH_SELL_RATE,
@@ -53,6 +52,42 @@ import {
   WORK_STREAK_BONUS_PER_DAY,
   type FishRarity
 } from './domain/gameConfig.js';
+import {
+  BASE_CLASS_DEFINITIONS,
+  BOSS_GEAR_RECIPES,
+  CLASS_RESET_COST,
+  GEAR_SHOP_OFFERS,
+  MATERIAL_KEYS,
+  MATERIAL_SHOP_PRICES,
+  RAID_BOSSES,
+  RAID_COOLDOWN_MS,
+  RAID_DIFFICULTIES,
+  RAID_LOBBY_WINDOW_MS,
+  RAID_MAX_PARTY_SIZE,
+  RAID_MIN_PARTY_SIZE,
+  SHOP_MATERIAL_KEYS,
+  STARTER_CLASS_COST,
+  baseClassByKey,
+  emptyStats,
+  formatStats,
+  generateRaidEncounters,
+  rarityMultiplier,
+  rollStatsFromRanges,
+  runClassQuiz,
+  t2PathByKey,
+  type BaseClassKey,
+  type ClassQuizGoal,
+  type ClassQuizStyle,
+  type ClassQuizVibe,
+  type GearRarity,
+  type GearSlot,
+  type MaterialKey,
+  type RaidBossKey,
+  type RaidDifficultyKey,
+  type ShopCategory,
+  type StatLine,
+  type T2PathKey
+} from './domain/endgame.js';
 import { selectMicroEvent } from './domain/events/microEventSelector.js';
 import { calculateJackpotTax } from './domain/gambling/tax.js';
 import { bumpFishRarity, rollChance, rollFishRarity, rollHatchRarity } from './domain/rolls.js';
@@ -61,23 +96,28 @@ import {
   activePet,
   appState,
   balances,
-  cosmeticsOwned,
-  dailyShopRotation,
+  craftingMaterials,
   eggsInventory,
   eventRuns,
   fishCatches,
   fishCollection,
   fishHallOfFame,
+  gearInstances,
   jackpotEntries,
   jackpotRounds,
-  loadout,
   mythicHallOfFame,
   petInstances,
   petsOwned,
+  raidLobbies,
+  raidLobbyMembers,
+  raidRunMembers,
+  raidRuns,
   raisesOwned,
   rodsOwned,
   shards,
   treasury,
+  userClassProgress,
+  userGearEquips,
   wikiPages,
   type PetType,
   type Rarity,
@@ -106,29 +146,6 @@ const sleep = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const cosmeticsPool = {
-  title: [
-    { id: 'title_molgian_rookie', name: 'Molgian Rookie', price: 120 },
-    { id: 'title_chaos_clerk', name: 'Chaos Clerk', price: 240 },
-    { id: 'title_tax_enjoyer', name: 'Tax Enjoyer', price: 400 },
-    { id: 'title_bureau_chief', name: 'Bureau Chief', price: 700 }
-  ],
-  badge: [
-    { id: 'badge_green_slime', name: 'Green Slime Badge', price: 120 },
-    { id: 'badge_broken_coin', name: 'Broken Coin Badge', price: 220 },
-    { id: 'badge_fish_knife', name: 'Fish Knife Badge', price: 320 },
-    { id: 'badge_molgium_star', name: 'Molgium Star Badge', price: 520 }
-  ],
-  frame: [
-    { id: 'frame_bureau_steel', name: 'Bureau Steel', price: 220 },
-    { id: 'frame_egg_static', name: 'Egg Static', price: 280 },
-    { id: 'frame_hall_gold', name: 'Hall Gold', price: 460 },
-    { id: 'frame_mythic_fire', name: 'Mythic Fire', price: 920 }
-  ]
-} as const;
-
-type CosmeticSlot = keyof typeof cosmeticsPool;
-type ShopItem = (typeof cosmeticsPool)[CosmeticSlot][number] & { slot: CosmeticSlot };
 type EggGameType = 'speed_type' | 'reaction_lock' | 'emoji_memory' | 'rapid_choice' | 'quick_duel';
 type EventName =
   | 'pickpocket'
@@ -148,6 +165,12 @@ type MissionDefinition = {
   metric: MissionMetric;
   target: number;
   label: string;
+};
+
+type GearSetBonusInfo = {
+  mainClassKey: BaseClassKey;
+  twoPieceBonus: string;
+  fourPieceBonus: string;
 };
 
 const speedTypePrompts = [
@@ -175,6 +198,33 @@ const MISSION_DEFINITIONS: MissionDefinition[] = [
     label: 'Win 12 gambles'
   }
 ];
+const gearSetBonuses: Record<string, GearSetBonusInfo> = {
+  set_bureau_enforcer: {
+    mainClassKey: 'bureau_enforcer',
+    twoPieceBonus: '+18% raid guard and +8% raid power.',
+    fourPieceBonus: '+30% riot pressure when your T3 specialization is active.'
+  },
+  set_shadow_clerk: {
+    mainClassKey: 'shadow_clerk',
+    twoPieceBonus: '+14% precision and +12% crit conversion.',
+    fourPieceBonus: '+26% payout manipulation for your locked specialization.'
+  },
+  set_relic_engineer: {
+    mainClassKey: 'relic_engineer',
+    twoPieceBonus: '+16% scavenge and +10% resolve.',
+    fourPieceBonus: '+28% forge efficiency and raid utility output.'
+  },
+  set_abyss_angler: {
+    mainClassKey: 'abyss_angler',
+    twoPieceBonus: '+15% power and +12% haste.',
+    fourPieceBonus: '+27% boss damage conversion for your specialization.'
+  },
+  set_chaos_oracle: {
+    mainClassKey: 'chaos_oracle',
+    twoPieceBonus: '+15% luck control and +10% yield.',
+    fourPieceBonus: '+29% encounter volatility leverage.'
+  }
+};
 const claimWords = ['MOLGIUM', 'BUREAU', 'HATCH', 'CHAOS', 'ROD'];
 const emojiPool = ['🐟', '🥚', '💰', '🔥', '⭐', '🧪', '🧿', '🫧'];
 const fishNameWords = [
@@ -704,12 +754,6 @@ export class MolgianService {
       if (!shardRow) {
         db.insert(shards).values({ userId: existing.id, amount: 0 }).run();
       }
-      const loadoutRow = db.select().from(loadout).where(eq(loadout.userId, existing.id)).get();
-      if (!loadoutRow) {
-        db.insert(loadout)
-          .values({ userId: existing.id, titleId: null, badgeId: null, frameId: null, updatedAt: nowMs() })
-          .run();
-      }
       const activePetRow = db.select().from(activePet).where(eq(activePet.userId, existing.id)).get();
       if (!activePetRow) {
         db.insert(activePet).values({ userId: existing.id, petInstanceId: null, equippedAt: null }).run();
@@ -735,9 +779,6 @@ export class MolgianService {
     db.insert(balances).values({ userId: user.id, amount: 0 }).run();
     db.insert(eggsInventory).values({ userId: user.id, eggs: 0, mythicEggs: 0, lastWinAt: null }).run();
     db.insert(shards).values({ userId: user.id, amount: 0 }).run();
-    db.insert(loadout)
-      .values({ userId: user.id, titleId: null, badgeId: null, frameId: null, updatedAt: timestamp })
-      .run();
     db.insert(activePet).values({ userId: user.id, petInstanceId: null, equippedAt: null }).run();
     return user;
   }
@@ -1065,6 +1106,1181 @@ export class MolgianService {
     };
   }
 
+  private ensureClassProgressRow(userId: number): typeof userClassProgress.$inferSelect {
+    const existing = db.select().from(userClassProgress).where(eq(userClassProgress.userId, userId)).get();
+    if (existing) return existing;
+    db.insert(userClassProgress)
+      .values({
+        userId,
+        baseClassKey: null,
+        t2PathKey: null,
+        t3SpecKey: null,
+        quizRecommendation: null,
+        resetCount: 0,
+        selectedAt: null,
+        advancedAt: null,
+        updatedAt: nowMs()
+      })
+      .run();
+    return db.select().from(userClassProgress).where(eq(userClassProgress.userId, userId)).get()!;
+  }
+
+  private ensureMaterialRows(userId: number): void {
+    const keys = MATERIAL_KEYS;
+    for (const key of keys) {
+      const row = db
+        .select()
+        .from(craftingMaterials)
+        .where(and(eq(craftingMaterials.userId, userId), eq(craftingMaterials.materialKey, key)))
+        .get();
+      if (row) continue;
+      db.insert(craftingMaterials)
+        .values({
+          userId,
+          materialKey: key,
+          amount: 0,
+          updatedAt: nowMs()
+        })
+        .run();
+    }
+  }
+
+  private materialAmount(userId: number, key: MaterialKey): number {
+    const row = db
+      .select()
+      .from(craftingMaterials)
+      .where(and(eq(craftingMaterials.userId, userId), eq(craftingMaterials.materialKey, key)))
+      .get();
+    return row?.amount ?? 0;
+  }
+
+  private createGearInstance(
+    tx: any,
+    data: {
+      userId: number;
+      templateKey: string;
+      name: string;
+      slot: GearSlot;
+      rarity: GearRarity;
+      classAffinity: BaseClassKey | null;
+      setKey: string | null;
+      source: string;
+      stats: StatLine;
+    }
+  ): number {
+    const inserted = tx
+      .insert(gearInstances)
+      .values({
+        userId: data.userId,
+        templateKey: data.templateKey,
+        name: data.name,
+        slot: data.slot,
+        rarity: data.rarity,
+        classAffinity: data.classAffinity,
+        setKey: data.setKey,
+        source: data.source,
+        power: data.stats.power,
+        guard: data.stats.guard,
+        crit: data.stats.crit,
+        haste: data.stats.haste,
+        precision: data.stats.precision,
+        resolve: data.stats.resolve,
+        yield: data.stats.yield,
+        scavenge: data.stats.scavenge,
+        luckControl: data.stats.luckControl,
+        createdAt: nowMs()
+      })
+      .run();
+    return Number(inserted.lastInsertRowid);
+  }
+
+  private multiplyStats(stats: StatLine, ratio: number): StatLine {
+    const result = emptyStats();
+    for (const [key, value] of Object.entries(stats) as Array<[keyof StatLine, number]>) {
+      result[key] = Math.max(0, Math.floor(value * ratio));
+    }
+    return result;
+  }
+
+  private classPathSummary(row: typeof userClassProgress.$inferSelect): string {
+    if (!row.baseClassKey) return 'None';
+    const base = baseClassByKey(row.baseClassKey as BaseClassKey);
+    if (!base) return 'Unknown';
+    const selectedPath = row.t2PathKey
+      ? base.paths.find((entry) => entry.key === row.t2PathKey)
+      : null;
+    if (!selectedPath) return `${base.name} (base only)`;
+    return `${base.name} -> ${selectedPath.name} -> ${selectedPath.t3Name}`;
+  }
+
+  private gearSlots(): GearSlot[] {
+    return ['weapon', 'helmet', 'chest', 'gloves', 'boots', 'relic'];
+  }
+
+  private readEquippedGear(userId: number): Array<typeof gearInstances.$inferSelect> {
+    const equipRows = db.select().from(userGearEquips).where(eq(userGearEquips.userId, userId)).all();
+    if (equipRows.length === 0) return [];
+    return equipRows
+      .map((equip) => {
+        if (!equip.gearInstanceId) return null;
+        return db.select().from(gearInstances).where(eq(gearInstances.id, equip.gearInstanceId)).get() ?? null;
+      })
+      .filter((row): row is typeof gearInstances.$inferSelect => row !== null);
+  }
+
+  private computeRaidPower(userId: number): {
+    power: number;
+    classPath: string;
+    setBonuses: string;
+    equipCount: number;
+  } {
+    const classRow = this.ensureClassProgressRow(userId);
+    const classPath = this.classPathSummary(classRow);
+    const equipped = this.readEquippedGear(userId);
+    const stats = emptyStats();
+    for (const row of equipped) {
+      stats.power += row.power;
+      stats.guard += row.guard;
+      stats.crit += row.crit;
+      stats.haste += row.haste;
+      stats.precision += row.precision;
+      stats.resolve += row.resolve;
+      stats.yield += row.yield;
+      stats.scavenge += row.scavenge;
+      stats.luckControl += row.luckControl;
+    }
+
+    let raidPower =
+      120 +
+      stats.power * 1.2 +
+      stats.guard * 0.6 +
+      stats.crit * 0.55 +
+      stats.haste * 0.45 +
+      stats.precision * 0.5 +
+      stats.resolve * 0.4 +
+      stats.luckControl * 0.35;
+    if (classRow.baseClassKey) raidPower += 80;
+    if (classRow.t2PathKey) raidPower += 90;
+    if (classRow.t3SpecKey) raidPower += 110;
+
+    const setCounts = new Map<string, number>();
+    for (const row of equipped) {
+      if (!row.setKey) continue;
+      setCounts.set(row.setKey, (setCounts.get(row.setKey) ?? 0) + 1);
+    }
+    const setBonuses: string[] = [];
+    for (const [setKey, count] of setCounts.entries()) {
+      const bonus = gearSetBonuses[setKey];
+      if (!bonus) continue;
+      if (count >= 2) {
+        raidPower *= 1.08;
+        setBonuses.push(`${setKey}: 2-piece active`);
+      }
+      if (count >= 4 && classRow.baseClassKey === bonus.mainClassKey && classRow.t3SpecKey) {
+        raidPower *= 1.12;
+        setBonuses.push(`${setKey}: 4-piece specialization active`);
+      }
+    }
+
+    return {
+      power: Math.max(50, Math.floor(raidPower)),
+      classPath,
+      setBonuses: setBonuses.length > 0 ? setBonuses.join(', ') : 'none',
+      equipCount: equipped.length
+    };
+  }
+
+  public classListText(): string {
+    const lines: string[] = [];
+    lines.push(`Starter class unlock cost: ${STARTER_CLASS_COST} Molgium.`);
+    lines.push('Choose one base class, then one T2 path. T2 locks your T3 specialization.');
+    for (const base of BASE_CLASS_DEFINITIONS) {
+      lines.push('');
+      lines.push(`- ${base.name}: ${base.description}`);
+      for (const path of base.paths) {
+        lines.push(`  • ${path.name} -> ${path.t3Name}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  public async classQuiz(
+    discordId: string,
+    username: string,
+    style: ClassQuizStyle,
+    goal: ClassQuizGoal,
+    vibe: ClassQuizVibe
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const result = runClassQuiz(style, goal, vibe);
+    this.ensureClassProgressRow(user.id);
+    db.update(userClassProgress)
+      .set({ quizRecommendation: result.recommended.key, updatedAt: nowMs() })
+      .where(eq(userClassProgress.userId, user.id))
+      .run();
+    return {
+      ok: true,
+      message:
+        `Recommended class: **${result.recommended.name}**\n` +
+        `${result.recommended.description}\n` +
+        `Try /class choose main:${result.recommended.key}`
+    };
+  }
+
+  public async classChoose(
+    discordId: string,
+    username: string,
+    baseClassKey: BaseClassKey
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const classRow = this.ensureClassProgressRow(user.id);
+    if (classRow.baseClassKey) {
+      return { ok: false, message: 'You already have a base class. Use /class reset to change.' };
+    }
+    const base = baseClassByKey(baseClassKey);
+    if (!base) return { ok: false, message: 'Invalid base class.' };
+
+    let newBalance = 0;
+    try {
+      db.transaction((tx) => {
+        const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
+        if (!wallet) throw new Error('Wallet missing.');
+        if (wallet.amount < STARTER_CLASS_COST) throw new Error('Not enough Molgium for starter class.');
+        newBalance = wallet.amount - STARTER_CLASS_COST;
+        tx.update(balances).set({ amount: newBalance }).where(eq(balances.userId, user.id)).run();
+        tx
+          .update(userClassProgress)
+          .set({
+            baseClassKey,
+            t2PathKey: null,
+            t3SpecKey: null,
+            selectedAt: nowMs(),
+            advancedAt: null,
+            updatedAt: nowMs()
+          })
+          .where(eq(userClassProgress.userId, user.id))
+          .run();
+
+        const starterWeaponStats = this.multiplyStats(base.paths[0].weights, 0.5);
+        const starterChestStats = this.multiplyStats(base.paths[1].weights, 0.38);
+        const weaponId = this.createGearInstance(tx, {
+          userId: user.id,
+          templateKey: `starter_${base.key}_weapon`,
+          name: `${base.setPrefix} Recruit Armament`,
+          slot: 'weapon',
+          rarity: 'Common',
+          classAffinity: base.key,
+          setKey: `set_${base.key}`,
+          source: 'starter_class',
+          stats: starterWeaponStats
+        });
+        const chestId = this.createGearInstance(tx, {
+          userId: user.id,
+          templateKey: `starter_${base.key}_chest`,
+          name: `${base.setPrefix} Recruit Cuirass`,
+          slot: 'chest',
+          rarity: 'Common',
+          classAffinity: base.key,
+          setKey: `set_${base.key}`,
+          source: 'starter_class',
+          stats: starterChestStats
+        });
+        tx
+          .insert(userGearEquips)
+          .values({ userId: user.id, slot: 'weapon', gearInstanceId: weaponId, equippedAt: nowMs() })
+          .onConflictDoUpdate({
+            target: [userGearEquips.userId, userGearEquips.slot],
+            set: { gearInstanceId: weaponId, equippedAt: nowMs() }
+          })
+          .run();
+        tx
+          .insert(userGearEquips)
+          .values({ userId: user.id, slot: 'chest', gearInstanceId: chestId, equippedAt: nowMs() })
+          .onConflictDoUpdate({
+            target: [userGearEquips.userId, userGearEquips.slot],
+            set: { gearInstanceId: chestId, equippedAt: nowMs() }
+          })
+          .run();
+      });
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Class selection failed.' };
+    }
+
+    return {
+      ok: true,
+      message:
+        `Class chosen: ${base.name}. Cost ${STARTER_CLASS_COST} Molgium.\n` +
+        `Starter gear equipped: ${base.setPrefix} Recruit Armament + Recruit Cuirass.\n` +
+        `New balance: ${newBalance} Molgium.`
+    };
+  }
+
+  public async classPath(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const row = this.ensureClassProgressRow(user.id);
+    const pathText = this.classPathSummary(row);
+    return {
+      ok: true,
+      message:
+        `Current class path: ${pathText}\n` +
+        `Resets used: ${row.resetCount}\n` +
+        `Reset cost: ${CLASS_RESET_COST} Molgium.`
+    };
+  }
+
+  public async classAdvance(
+    discordId: string,
+    username: string,
+    pathKey: T2PathKey
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const row = this.ensureClassProgressRow(user.id);
+    if (!row.baseClassKey) return { ok: false, message: 'Choose a base class first with /class choose.' };
+    if (row.t2PathKey) return { ok: false, message: 'T2 path already selected. Use /class reset to change.' };
+    const path = t2PathByKey(row.baseClassKey as BaseClassKey, pathKey);
+    if (!path) return { ok: false, message: 'That path is not valid for your base class.' };
+    db.update(userClassProgress)
+      .set({
+        t2PathKey: path.key,
+        t3SpecKey: path.t3Key,
+        advancedAt: nowMs(),
+        updatedAt: nowMs()
+      })
+      .where(eq(userClassProgress.userId, user.id))
+      .run();
+    return {
+      ok: true,
+      message:
+        `T2 path selected: ${path.name}\n` +
+        `T3 specialization locked: ${path.t3Name}\n` +
+        'Your set bonuses now scale with this specialization.'
+    };
+  }
+
+  public async classReset(
+    discordId: string,
+    username: string,
+    confirm: boolean
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!confirm) return { ok: false, message: 'Reset canceled. Set confirm:true to proceed.' };
+    const user = await this.ensureUser(discordId, username);
+    const row = this.ensureClassProgressRow(user.id);
+    if (!row.baseClassKey) return { ok: false, message: 'No class to reset.' };
+
+    let nextBalance = 0;
+    try {
+      db.transaction((tx) => {
+        const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
+        if (!wallet) throw new Error('Wallet missing.');
+        if (wallet.amount < CLASS_RESET_COST) throw new Error('Not enough Molgium for class reset.');
+        nextBalance = wallet.amount - CLASS_RESET_COST;
+        tx.update(balances).set({ amount: nextBalance }).where(eq(balances.userId, user.id)).run();
+        tx
+          .update(userClassProgress)
+          .set({
+            baseClassKey: null,
+            t2PathKey: null,
+            t3SpecKey: null,
+            selectedAt: null,
+            advancedAt: null,
+            resetCount: row.resetCount + 1,
+            updatedAt: nowMs()
+          })
+          .where(eq(userClassProgress.userId, user.id))
+          .run();
+      });
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Class reset failed.' };
+    }
+
+    return {
+      ok: true,
+      message: `Class reset complete for ${CLASS_RESET_COST} Molgium. New balance: ${nextBalance} Molgium.`
+    };
+  }
+
+  public async shopView(discordId: string, username: string): Promise<{ balance: number }> {
+    const user = await this.ensureUser(discordId, username);
+    const wallet = db.select().from(balances).where(eq(balances.userId, user.id)).get();
+    return { balance: wallet?.amount ?? 0 };
+  }
+
+  public async shopCategory(
+    discordId: string,
+    username: string,
+    category: ShopCategory
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    if (category === 'weapons' || category === 'armor') {
+      const offers = GEAR_SHOP_OFFERS.filter((entry) => entry.category === category);
+      if (offers.length === 0) return { ok: false, message: `No ${category} offers right now.` };
+      const lines = offers.map(
+        (offer) =>
+          `${offer.id}: ${offer.name} [${offer.rarity}] (${offer.slot}) - ${offer.price} Molgium` +
+          `${offer.classAffinity ? ` | affinity: ${offer.classAffinity}` : ''}`
+      );
+      return { ok: true, message: `Category: ${category}\n${lines.join('\n')}` };
+    }
+
+    if (category === 'materials') {
+      this.ensureMaterialRows(user.id);
+      const lines = SHOP_MATERIAL_KEYS.map((key) => {
+        const amount = this.materialAmount(user.id, key);
+        return `${key}: ${MATERIAL_SHOP_PRICES[key]} Molgium each (owned ${amount})`;
+      });
+      return { ok: true, message: `Category: materials\n${lines.join('\n')}` };
+    }
+
+    if (category === 'rods') {
+      const rods = await this.rodShop(discordId, username);
+      const lines = rods.map(
+        (rod) =>
+          `${rod.tier}: ${rod.name} (${rod.cost})${rod.owned ? ' [owned]' : ''}${rod.equipped ? ' [equipped]' : ''} | ${rod.statsSummary}`
+      );
+      return { ok: true, message: `Category: rods\n${lines.join('\n')}` };
+    }
+
+    const jobs = await this.jobList(discordId, username);
+    const lines = jobs.tiers.map(
+      (tier) =>
+        `job_${tier.id}: apply cost ${tier.cost}, SalaryBase ${tier.newSalaryBase}${tier.owned ? ' [hired]' : ''}`
+    );
+    return { ok: true, message: `Category: jobs\nCurrent SalaryBase: ${jobs.currentSalaryBase}\n${lines.join('\n')}` };
+  }
+
+  public async shopBuy(
+    discordId: string,
+    username: string,
+    itemId: string,
+    quantity: number
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const qty = Math.max(1, Math.floor(quantity));
+    if (qty > 999) return { ok: false, message: 'Quantity too high.' };
+
+    const gearOffer = GEAR_SHOP_OFFERS.find((entry) => entry.id === itemId);
+    if (gearOffer) {
+      const cost = gearOffer.price * qty;
+      let newBalance = 0;
+      const created: number[] = [];
+      try {
+        db.transaction((tx) => {
+          const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
+          if (!wallet) throw new Error('Wallet missing.');
+          if (wallet.amount < cost) throw new Error('Insufficient Molgium.');
+          newBalance = wallet.amount - cost;
+          tx.update(balances).set({ amount: newBalance }).where(eq(balances.userId, user.id)).run();
+          for (let i = 0; i < qty; i += 1) {
+            const baseStats = rollStatsFromRanges(gearOffer.statRanges);
+            const finalStats = this.multiplyStats(baseStats, rarityMultiplier(gearOffer.rarity));
+            const id = this.createGearInstance(tx, {
+              userId: user.id,
+              templateKey: gearOffer.id,
+              name: gearOffer.name,
+              slot: gearOffer.slot,
+              rarity: gearOffer.rarity,
+              classAffinity: gearOffer.classAffinity ?? null,
+              setKey: null,
+              source: 'shop',
+              stats: finalStats
+            });
+            created.push(id);
+          }
+        });
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Shop purchase failed.' };
+      }
+      return {
+        ok: true,
+        message:
+          `Purchased ${qty}x ${gearOffer.name} for ${cost} Molgium.\n` +
+          `Created gear id(s): ${created.join(', ')}\n` +
+          `New balance: ${newBalance} Molgium.`
+      };
+    }
+
+    const materialId = itemId.toLowerCase().replace('material_', '');
+    if (SHOP_MATERIAL_KEYS.includes(materialId as (typeof SHOP_MATERIAL_KEYS)[number])) {
+      const material = materialId as (typeof SHOP_MATERIAL_KEYS)[number];
+      const cost = MATERIAL_SHOP_PRICES[material] * qty;
+      let newBalance = 0;
+      let newMaterialAmount = 0;
+      try {
+        db.transaction((tx) => {
+          const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
+          if (!wallet) throw new Error('Wallet missing.');
+          if (wallet.amount < cost) throw new Error('Insufficient Molgium.');
+          newBalance = wallet.amount - cost;
+          tx.update(balances).set({ amount: newBalance }).where(eq(balances.userId, user.id)).run();
+          const row = tx
+            .select()
+            .from(craftingMaterials)
+            .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, material)))
+            .get();
+          if (!row) throw new Error('Material row missing.');
+          newMaterialAmount = row.amount + qty;
+          tx
+            .update(craftingMaterials)
+            .set({ amount: newMaterialAmount, updatedAt: nowMs() })
+            .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, material)))
+            .run();
+        });
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Material purchase failed.' };
+      }
+      return {
+        ok: true,
+        message:
+          `Purchased ${qty}x ${material} for ${cost} Molgium.\n` +
+          `${material} now: ${newMaterialAmount}\n` +
+          `New balance: ${newBalance} Molgium.`
+      };
+    }
+
+    if (itemId.startsWith('rod_')) {
+      const tier = itemId.replace('rod_', '') as RodTier;
+      return this.rodBuy(discordId, username, tier);
+    }
+
+    if (itemId.startsWith('job_')) {
+      const parsed = Number(itemId.replace('job_', ''));
+      if (!Number.isFinite(parsed) || parsed < 1) return { ok: false, message: 'Invalid job item id.' };
+      return this.jobApply(discordId, username, parsed);
+    }
+
+    return { ok: false, message: `Unknown shop item id: ${itemId}` };
+  }
+
+  public async gearInventory(
+    discordId: string,
+    username: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const rows = db
+      .select()
+      .from(gearInstances)
+      .where(eq(gearInstances.userId, user.id))
+      .orderBy(desc(gearInstances.id))
+      .all();
+    if (rows.length === 0) return { ok: false, message: 'No gear owned yet. Use /shop or /forge.' };
+
+    const equipRows = db.select().from(userGearEquips).where(eq(userGearEquips.userId, user.id)).all();
+    const equippedSet = new Set(equipRows.map((entry) => entry.gearInstanceId).filter((id): id is number => !!id));
+
+    const lines = rows.slice(0, 30).map((row) => {
+      const flag = equippedSet.has(row.id) ? ' [EQUIPPED]' : '';
+      return (
+        `#${row.id} ${row.name} [${row.rarity}] (${row.slot})${flag}\n` +
+        `  ${formatStats({
+          power: row.power,
+          guard: row.guard,
+          crit: row.crit,
+          haste: row.haste,
+          precision: row.precision,
+          resolve: row.resolve,
+          yield: row.yield,
+          scavenge: row.scavenge,
+          luckControl: row.luckControl
+        })}`
+      );
+    });
+    const hidden = Math.max(0, rows.length - 30);
+    return {
+      ok: true,
+      message:
+        `Owned gear: ${rows.length}\n` +
+        `${lines.join('\n')}` +
+        `${hidden > 0 ? `\n...and ${hidden} more.` : ''}`
+    };
+  }
+
+  public async gearEquip(
+    discordId: string,
+    username: string,
+    slotInput: string,
+    gearId: number
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const slot = slotInput.toLowerCase() as GearSlot;
+    if (!this.gearSlots().includes(slot)) return { ok: false, message: 'Invalid gear slot.' };
+    const row = db
+      .select()
+      .from(gearInstances)
+      .where(and(eq(gearInstances.id, gearId), eq(gearInstances.userId, user.id)))
+      .get();
+    if (!row) return { ok: false, message: 'Gear not found.' };
+    if (row.slot !== slot) return { ok: false, message: `Gear #${gearId} fits slot ${row.slot}, not ${slot}.` };
+    db.insert(userGearEquips)
+      .values({ userId: user.id, slot, gearInstanceId: row.id, equippedAt: nowMs() })
+      .onConflictDoUpdate({
+        target: [userGearEquips.userId, userGearEquips.slot],
+        set: { gearInstanceId: row.id, equippedAt: nowMs() }
+      })
+      .run();
+    return { ok: true, message: `Equipped ${row.name} (#${row.id}) to ${slot}.` };
+  }
+
+  public async gearUnequip(
+    discordId: string,
+    username: string,
+    slotInput: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const slot = slotInput.toLowerCase() as GearSlot;
+    if (!this.gearSlots().includes(slot)) return { ok: false, message: 'Invalid gear slot.' };
+    const existing = db
+      .select()
+      .from(userGearEquips)
+      .where(and(eq(userGearEquips.userId, user.id), eq(userGearEquips.slot, slot)))
+      .get();
+    if (!existing) return { ok: false, message: `No gear equipped in slot ${slot}.` };
+    db
+      .delete(userGearEquips)
+      .where(and(eq(userGearEquips.userId, user.id), eq(userGearEquips.slot, slot)))
+      .run();
+    return { ok: true, message: `Unequipped slot ${slot}.` };
+  }
+
+  public async forgeMaterials(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const lines = MATERIAL_KEYS.map((key) => `${key}: ${this.materialAmount(user.id, key)}`);
+    return { ok: true, message: lines.join('\n') };
+  }
+
+  public async forgeRecipes(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureClassProgressRow(user.id);
+    const lines = BOSS_GEAR_RECIPES.map(
+      (entry) =>
+        `${entry.id}: ${entry.itemName} [${entry.rarity}] (${entry.slot}) | set ${entry.setName} | fee ${entry.fee}`
+    );
+    return { ok: true, message: lines.join('\n') };
+  }
+
+  public async forgePreview(
+    discordId: string,
+    username: string,
+    recipeId: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const recipe = BOSS_GEAR_RECIPES.find((entry) => entry.id === recipeId);
+    if (!recipe) return { ok: false, message: `Recipe not found: ${recipeId}` };
+    const materialLines = (Object.entries(recipe.materials) as Array<[MaterialKey, number]>).map(
+      ([key, amount]) => `${key}: need ${amount}, owned ${this.materialAmount(user.id, key)}`
+    );
+    return {
+      ok: true,
+      message:
+        `${recipe.itemName} [${recipe.rarity}] (${recipe.slot})\n` +
+        `Set: ${recipe.setName}\n` +
+        `Class affinity: ${recipe.classAffinity}\n` +
+        `Fee: ${recipe.fee} Molgium\n` +
+        `Stats: ${recipe.statRanges
+          .map((range) => `${range.key} ${range.min}-${range.max}`)
+          .join(', ')}\n` +
+        `Materials:\n${materialLines.join('\n')}`
+    };
+  }
+
+  public async forgeCraft(
+    discordId: string,
+    username: string,
+    recipeId: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const classRow = this.ensureClassProgressRow(user.id);
+    if (!classRow.baseClassKey) return { ok: false, message: 'Pick a class first with /class choose.' };
+    const recipe = BOSS_GEAR_RECIPES.find((entry) => entry.id === recipeId);
+    if (!recipe) return { ok: false, message: `Recipe not found: ${recipeId}` };
+
+    let newBalance = 0;
+    let craftedId = 0;
+    try {
+      db.transaction((tx) => {
+        const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
+        if (!wallet) throw new Error('Wallet missing.');
+        if (wallet.amount < recipe.fee) throw new Error('Not enough Molgium for forge fee.');
+        for (const [key, required] of Object.entries(recipe.materials) as Array<[MaterialKey, number]>) {
+          const row = tx
+            .select()
+            .from(craftingMaterials)
+            .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, key)))
+            .get();
+          if (!row || row.amount < required) throw new Error(`Missing materials: ${key}.`);
+        }
+        for (const [key, required] of Object.entries(recipe.materials) as Array<[MaterialKey, number]>) {
+          const row = tx
+            .select()
+            .from(craftingMaterials)
+            .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, key)))
+            .get();
+          if (!row) throw new Error('Material row missing.');
+          tx
+            .update(craftingMaterials)
+            .set({ amount: row.amount - required, updatedAt: nowMs() })
+            .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, key)))
+            .run();
+        }
+        newBalance = wallet.amount - recipe.fee;
+        tx.update(balances).set({ amount: newBalance }).where(eq(balances.userId, user.id)).run();
+
+        const rolled = rollStatsFromRanges(recipe.statRanges);
+        const scaled = this.multiplyStats(rolled, rarityMultiplier(recipe.rarity));
+        craftedId = this.createGearInstance(tx, {
+          userId: user.id,
+          templateKey: recipe.id,
+          name: recipe.itemName,
+          slot: recipe.slot,
+          rarity: recipe.rarity,
+          classAffinity: recipe.classAffinity,
+          setKey: recipe.setKey,
+          source: 'forge',
+          stats: scaled
+        });
+      });
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Forge crafting failed.' };
+    }
+
+    return {
+      ok: true,
+      message:
+        `Crafted ${recipe.itemName} (#${craftedId}).\n` +
+        `Set: ${recipe.setName}\n` +
+        `New balance: ${newBalance} Molgium.`
+    };
+  }
+
+  public async forgeSalvage(
+    discordId: string,
+    username: string,
+    gearId: number
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    this.ensureMaterialRows(user.id);
+    const gear = db
+      .select()
+      .from(gearInstances)
+      .where(and(eq(gearInstances.id, gearId), eq(gearInstances.userId, user.id)))
+      .get();
+    if (!gear) return { ok: false, message: 'Gear not found.' };
+    const equipRow = db.select().from(userGearEquips).where(eq(userGearEquips.gearInstanceId, gear.id)).get();
+    if (equipRow) return { ok: false, message: 'Unequip this gear before salvaging.' };
+
+    const rewards: Record<MaterialKey, number> = {
+      scrap: gear.rarity === 'Common' ? 2 : gear.rarity === 'Rare' ? 3 : 5,
+      core: gear.rarity === 'Legendary' || gear.rarity === 'Mythic' || gear.rarity === 'God' ? 1 : 0,
+      prism: gear.rarity === 'Mythic' || gear.rarity === 'God' ? 1 : 0,
+      void_alloy: gear.rarity === 'God' ? 1 : 0,
+      boss_core: 0
+    };
+
+    db.transaction((tx) => {
+      tx.delete(gearInstances).where(eq(gearInstances.id, gear.id)).run();
+      for (const [key, amount] of Object.entries(rewards) as Array<[MaterialKey, number]>) {
+        if (amount <= 0) continue;
+        const row = tx
+          .select()
+          .from(craftingMaterials)
+          .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, key)))
+          .get();
+        if (!row) continue;
+        tx
+          .update(craftingMaterials)
+          .set({ amount: row.amount + amount, updatedAt: nowMs() })
+          .where(and(eq(craftingMaterials.userId, user.id), eq(craftingMaterials.materialKey, key)))
+          .run();
+      }
+    });
+
+    const rewardText = (Object.entries(rewards) as Array<[MaterialKey, number]>)
+      .filter(([, amount]) => amount > 0)
+      .map(([key, amount]) => `${key} +${amount}`)
+      .join(', ');
+
+    return { ok: true, message: `Salvaged ${gear.name}. Materials gained: ${rewardText || 'none'}.` };
+  }
+
+  private raidCooldownKey(userId: number): string {
+    return `raid:cooldown_until:${userId}`;
+  }
+
+  private raidRecentEncountersKey(): string {
+    return 'raid:recent_encounters';
+  }
+
+  private raidCooldownRemainingMs(userId: number): number {
+    const cooldownUntil = this.getStateNumber(this.raidCooldownKey(userId)) ?? 0;
+    return Math.max(0, cooldownUntil - nowMs());
+  }
+
+  private setRaidCooldown(userId: number): void {
+    this.setState(this.raidCooldownKey(userId), String(nowMs() + RAID_COOLDOWN_MS));
+  }
+
+  private randomLobbyCode(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i += 1) {
+      code += alphabet[randomIntInclusive(0, alphabet.length - 1)];
+    }
+    return code;
+  }
+
+  private pruneExpiredRaidLobbies(): void {
+    const now = nowMs();
+    const expired = db
+      .select()
+      .from(raidLobbies)
+      .where(and(eq(raidLobbies.status, 'open'), sql`${raidLobbies.expiresAt} < ${now}`))
+      .all();
+    for (const lobby of expired) {
+      db
+        .update(raidLobbies)
+        .set({ status: 'expired', endedAt: now })
+        .where(eq(raidLobbies.id, lobby.id))
+        .run();
+    }
+  }
+
+  private activeLobbyForUser(userId: number): typeof raidLobbies.$inferSelect | null {
+    this.pruneExpiredRaidLobbies();
+    const memberRows = db.select().from(raidLobbyMembers).where(eq(raidLobbyMembers.userId, userId)).all();
+    for (const member of memberRows) {
+      const lobby = db
+        .select()
+        .from(raidLobbies)
+        .where(
+          and(
+            eq(raidLobbies.id, member.lobbyId),
+            or(eq(raidLobbies.status, 'open'), eq(raidLobbies.status, 'running'))
+          )
+        )
+        .get();
+      if (lobby) return lobby;
+    }
+    return null;
+  }
+
+  private raidMemberUsernames(lobbyId: number): Array<{ userId: number; username: string }> {
+    const memberRows = db.select().from(raidLobbyMembers).where(eq(raidLobbyMembers.lobbyId, lobbyId)).all();
+    return memberRows.map((member) => {
+      const user = db.select().from(users).where(eq(users.id, member.userId)).get();
+      return { userId: member.userId, username: user?.username ?? `user-${member.userId}` };
+    });
+  }
+
+  public async raidCreate(
+    discordId: string,
+    username: string,
+    bossKey: RaidBossKey,
+    difficulty: RaidDifficultyKey,
+    channelId: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const classRow = this.ensureClassProgressRow(user.id);
+    if (!classRow.baseClassKey) {
+      return { ok: false, message: 'Pick your starter class first with /class choose.' };
+    }
+    if (!RAID_DIFFICULTIES[difficulty]) return { ok: false, message: 'Invalid difficulty.' };
+    if (!RAID_BOSSES.some((entry) => entry.key === bossKey)) return { ok: false, message: 'Invalid boss.' };
+    const cooldownMs = this.raidCooldownRemainingMs(user.id);
+    if (cooldownMs > 0) {
+      return { ok: false, message: `Raid cooldown active: ${Math.ceil(cooldownMs / 60000)}m remaining.` };
+    }
+    if (this.activeLobbyForUser(user.id)) return { ok: false, message: 'You are already in an active lobby.' };
+
+    let code = this.randomLobbyCode();
+    for (let i = 0; i < 10; i += 1) {
+      const exists = db.select().from(raidLobbies).where(eq(raidLobbies.code, code)).get();
+      if (!exists) break;
+      code = this.randomLobbyCode();
+    }
+
+    const lobbyInserted = db
+      .insert(raidLobbies)
+      .values({
+        code,
+        ownerUserId: user.id,
+        bossKey,
+        difficulty,
+        status: 'open',
+        channelId,
+        createdAt: nowMs(),
+        expiresAt: nowMs() + RAID_LOBBY_WINDOW_MS,
+        startedAt: null,
+        endedAt: null
+      })
+      .run();
+    const lobbyId = Number(lobbyInserted.lastInsertRowid);
+    db.insert(raidLobbyMembers).values({ lobbyId, userId: user.id, joinedAt: nowMs() }).run();
+
+    return {
+      ok: true,
+      message:
+        `Raid lobby created: ${code}\n` +
+        `Boss: ${bossKey}\nDifficulty: ${difficulty}\n` +
+        `Lobby expires in 2 minutes.\nUse /raid join code:${code}`
+    };
+  }
+
+  public async raidJoin(
+    discordId: string,
+    username: string,
+    codeRaw: string
+  ): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const cooldownMs = this.raidCooldownRemainingMs(user.id);
+    if (cooldownMs > 0) {
+      return { ok: false, message: `Raid cooldown active: ${Math.ceil(cooldownMs / 60000)}m remaining.` };
+    }
+    if (this.activeLobbyForUser(user.id)) return { ok: false, message: 'You are already in an active lobby.' };
+    const code = codeRaw.trim().toUpperCase();
+    const lobby = db
+      .select()
+      .from(raidLobbies)
+      .where(and(eq(raidLobbies.code, code), eq(raidLobbies.status, 'open')))
+      .get();
+    if (!lobby) return { ok: false, message: `Lobby not found for code ${code}.` };
+    if (lobby.expiresAt < nowMs()) return { ok: false, message: 'Lobby expired.' };
+    const memberCount = db.select().from(raidLobbyMembers).where(eq(raidLobbyMembers.lobbyId, lobby.id)).all().length;
+    if (memberCount >= RAID_MAX_PARTY_SIZE) return { ok: false, message: 'Lobby is full.' };
+    db.insert(raidLobbyMembers)
+      .values({ lobbyId: lobby.id, userId: user.id, joinedAt: nowMs() })
+      .onConflictDoNothing()
+      .run();
+    return { ok: true, message: `Joined raid lobby ${code}.` };
+  }
+
+  public async raidLeave(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const lobby = this.activeLobbyForUser(user.id);
+    if (!lobby || lobby.status !== 'open') return { ok: false, message: 'No open lobby to leave.' };
+    if (lobby.ownerUserId === user.id) {
+      db.update(raidLobbies).set({ status: 'canceled', endedAt: nowMs() }).where(eq(raidLobbies.id, lobby.id)).run();
+      return { ok: true, message: `Lobby ${lobby.code} canceled by owner.` };
+    }
+    db
+      .delete(raidLobbyMembers)
+      .where(and(eq(raidLobbyMembers.lobbyId, lobby.id), eq(raidLobbyMembers.userId, user.id)))
+      .run();
+    return { ok: true, message: `Left lobby ${lobby.code}.` };
+  }
+
+  public async raidStatus(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const lobby = this.activeLobbyForUser(user.id);
+    if (!lobby) return { ok: false, message: 'You are not in an active raid lobby.' };
+    const members = this.raidMemberUsernames(lobby.id);
+    return {
+      ok: true,
+      message:
+        `Lobby ${lobby.code} [${lobby.status}]\n` +
+        `Boss: ${lobby.bossKey}\nDifficulty: ${lobby.difficulty}\n` +
+        `Members (${members.length}/${RAID_MAX_PARTY_SIZE}): ${members.map((member) => member.username).join(', ')}`
+    };
+  }
+
+  public async raidHistory(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const rows = db
+      .select()
+      .from(raidRunMembers)
+      .where(eq(raidRunMembers.userId, user.id))
+      .orderBy(desc(raidRunMembers.id))
+      .limit(12)
+      .all();
+    if (rows.length === 0) return { ok: true, message: 'No raid history yet.' };
+    const lines = rows.map((row) => {
+      const run = db.select().from(raidRuns).where(eq(raidRuns.id, row.runId)).get();
+      if (!run) return `Run ${row.runId}: missing`;
+      return (
+        `Run #${run.id} ${run.bossKey} [${run.difficulty}] - ${run.victory === 1 ? 'WIN' : 'LOSS'} | ` +
+        `reward ${row.rewardMolgium} Molgium${row.eggDropped ? ' +egg' : ''}`
+      );
+    });
+    return { ok: true, message: lines.join('\n') };
+  }
+
+  public async raidStart(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const lobby = this.activeLobbyForUser(user.id);
+    if (!lobby) return { ok: false, message: 'No active lobby found.' };
+    if (lobby.status !== 'open') return { ok: false, message: 'Lobby is not startable.' };
+    if (lobby.ownerUserId !== user.id) return { ok: false, message: 'Only the lobby owner can start the raid.' };
+
+    const members = this.raidMemberUsernames(lobby.id);
+    if (members.length < RAID_MIN_PARTY_SIZE) {
+      return { ok: false, message: `Need at least ${RAID_MIN_PARTY_SIZE} players to start.` };
+    }
+
+    db.update(raidLobbies).set({ status: 'running', startedAt: nowMs() }).where(eq(raidLobbies.id, lobby.id)).run();
+    const difficulty = RAID_DIFFICULTIES[lobby.difficulty as RaidDifficultyKey];
+    const previous = this.getState(this.raidRecentEncountersKey());
+    const recent = previous ? (JSON.parse(previous) as string[]) : [];
+    const generated = generateRaidEncounters(lobby.bossKey as RaidBossKey, recent);
+    const stages = generated.stages;
+
+    const memberPower = members.map((member) => ({
+      ...member,
+      ...this.computeRaidPower(member.userId)
+    }));
+    const partyPowerBase = memberPower.reduce((sum, member) => sum + member.power, 0);
+
+    await this.sendEventPing(
+      `Raid started: ${lobby.code}\nBoss: ${lobby.bossKey}\nDifficulty: ${difficulty.label}\n` +
+        `Party (${members.length}): ${members.map((member) => member.username).join(', ')}\n` +
+        `Mutator: ${generated.mutator}`,
+      'Raid'
+    );
+
+    let clearedStages = 0;
+    let failedEncounter: string | null = null;
+    for (let index = 0; index < stages.length; index += 1) {
+      const stage = stages[index]!;
+      const stageHp = Math.floor(stage.hpBase * difficulty.enemyHpMultiplier * (1 + index * 0.12));
+      const stageRoll = Math.floor(partyPowerBase * (0.88 + Math.random() * 0.34));
+      const won = stageRoll >= stageHp;
+      await this.sendEventMessage(
+        [
+          `Encounter ${index + 1}/${stages.length}: ${stage.portrait} ${stage.name} [${stage.kind.toUpperCase()}]`,
+          `Modifier: ${stage.modifier}`,
+          `Enemy HP: ${stageHp}`,
+          `Party Power Roll: ${stageRoll}`,
+          won ? 'Result: CLEARED' : 'Result: FAILED'
+        ].join('\n'),
+        stage.kind === 'boss' ? 'Raid Boss' : 'Raid Encounter'
+      );
+      await sleep(900);
+      if (!won) {
+        failedEncounter = stage.name;
+        break;
+      }
+      clearedStages += 1;
+    }
+
+    const victory = clearedStages === stages.length;
+    const runInsert = db
+      .insert(raidRuns)
+      .values({
+        lobbyId: lobby.id,
+        bossKey: lobby.bossKey,
+        difficulty: lobby.difficulty,
+        mutator: generated.mutator,
+        stageCount: stages.length,
+        status: 'completed',
+        victory: victory ? 1 : 0,
+        startedAt: lobby.startedAt ?? nowMs(),
+        endedAt: nowMs(),
+        summaryJson: JSON.stringify({
+          members: members.map((member) => member.username),
+          clearedStages,
+          failedEncounter
+        })
+      })
+      .run();
+    const runId = Number(runInsert.lastInsertRowid);
+
+    const recentKeys = [...recent, ...stages.map((stage) => stage.key)].slice(-15);
+    this.setState(this.raidRecentEncountersKey(), JSON.stringify(recentKeys));
+
+    const rewardLines: string[] = [];
+    for (const member of memberPower) {
+      this.ensureMaterialRows(member.userId);
+      const payout = victory
+        ? randomIntInclusive(difficulty.payoutMin, difficulty.payoutMax)
+        : Math.floor(randomIntInclusive(difficulty.payoutMin, difficulty.payoutMax) * 0.25);
+      const materialDrops: Partial<Record<MaterialKey, number>> = {
+        scrap: Math.max(1, Math.floor(randomIntInclusive(2, 5) * difficulty.materialMultiplier))
+      };
+      if (victory && Math.random() < 0.55) materialDrops.core = randomIntInclusive(1, 2);
+      if (victory && Math.random() < 0.35) materialDrops.prism = 1;
+      if (victory && Math.random() < 0.22) materialDrops.void_alloy = 1;
+      if (victory && Math.random() < difficulty.bossCoreDropChance) materialDrops.boss_core = 1;
+      const eggDrop = victory && Math.random() < difficulty.eggDropChance ? 1 : 0;
+
+      db.transaction((tx) => {
+        const wallet = tx.select().from(balances).where(eq(balances.userId, member.userId)).get();
+        if (!wallet) throw new Error('Wallet missing during raid payout.');
+        tx
+          .update(balances)
+          .set({ amount: wallet.amount + payout })
+          .where(eq(balances.userId, member.userId))
+          .run();
+        for (const [key, amount] of Object.entries(materialDrops) as Array<[MaterialKey, number | undefined]>) {
+          if (!amount || amount <= 0) continue;
+          const row = tx
+            .select()
+            .from(craftingMaterials)
+            .where(and(eq(craftingMaterials.userId, member.userId), eq(craftingMaterials.materialKey, key)))
+            .get();
+          if (!row) continue;
+          tx
+            .update(craftingMaterials)
+            .set({ amount: row.amount + amount, updatedAt: nowMs() })
+            .where(and(eq(craftingMaterials.userId, member.userId), eq(craftingMaterials.materialKey, key)))
+            .run();
+        }
+        if (eggDrop > 0) {
+          const eggRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, member.userId)).get();
+          if (eggRow) {
+            tx
+              .update(eggsInventory)
+              .set({ eggs: eggRow.eggs + 1 })
+              .where(eq(eggsInventory.userId, member.userId))
+              .run();
+          }
+        }
+      });
+
+      this.setRaidCooldown(member.userId);
+      db.insert(raidRunMembers)
+        .values({
+          runId,
+          userId: member.userId,
+          contribution: member.power,
+          rewardMolgium: payout,
+          eggDropped: eggDrop,
+          materialsJson: JSON.stringify(materialDrops),
+          createdAt: nowMs()
+        })
+        .run();
+
+      rewardLines.push(
+        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}`
+      );
+    }
+
+    db
+      .update(raidLobbies)
+      .set({ status: victory ? 'completed' : 'failed', endedAt: nowMs() })
+      .where(eq(raidLobbies.id, lobby.id))
+      .run();
+
+    await this.sendEventPing(
+      [
+        victory
+          ? `Raid clear: ${lobby.bossKey} on ${difficulty.label}.`
+          : `Raid failed at ${failedEncounter ?? 'an encounter'} (${clearedStages}/${stages.length} cleared).`,
+        'Rewards:',
+        ...rewardLines
+      ].join('\n'),
+      'Raid Results'
+    );
+
+    return {
+      ok: victory,
+      message: victory
+        ? 'Raid completed. Check Special Place for staged encounter logs and rewards.'
+        : `Raid failed at ${failedEncounter ?? 'an encounter'}. Rewards were reduced but granted.`
+    };
+  }
+
   private ensurePetFlavor(
     pet: Pick<typeof petInstances.$inferSelect, 'id' | 'petType' | 'generatedName' | 'generatedTypeLabel'>
   ): { generatedName: string; generatedTypeLabel: string } {
@@ -1207,149 +2423,6 @@ export class MolgianService {
         `Interview passed for job ${jobId}. SalaryBase now ${tier.newSalaryBase}. ` +
         `New balance: ${newBalance} Molgium.`
     };
-  }
-
-  private findShopItem(itemId: string): ShopItem | null {
-    for (const slot of Object.keys(cosmeticsPool) as CosmeticSlot[]) {
-      const found = cosmeticsPool[slot].find((entry) => entry.id === itemId);
-      if (found) return { ...found, slot };
-    }
-    return null;
-  }
-
-  private getOrCreateDailyRotation(): string[] {
-    const dayKey = this.currentDayKey();
-    const existing = db.select().from(dailyShopRotation).where(eq(dailyShopRotation.dayKey, dayKey)).get();
-    if (existing) return JSON.parse(existing.itemIdsJson) as string[];
-    const ids = shuffle(
-      [...cosmeticsPool.title, ...cosmeticsPool.badge, ...cosmeticsPool.frame].map((item) => item.id)
-    ).slice(0, ROTATING_SHOP_SIZE);
-    db.insert(dailyShopRotation)
-      .values({ dayKey, itemIdsJson: JSON.stringify(ids), generatedAt: nowMs() })
-      .onConflictDoUpdate({
-        target: dailyShopRotation.dayKey,
-        set: { itemIdsJson: JSON.stringify(ids), generatedAt: nowMs() }
-      })
-      .run();
-    return ids;
-  }
-
-  public async getShop(
-    discordId: string,
-    username: string
-  ): Promise<{ balance: number; rotating: ShopItem[] }> {
-    const user = await this.ensureUser(discordId, username);
-    const wallet = db.select().from(balances).where(eq(balances.userId, user.id)).get();
-    const rotationIds = this.getOrCreateDailyRotation();
-    return {
-      balance: wallet?.amount ?? 0,
-      rotating: rotationIds.map((id) => this.findShopItem(id)).filter((item): item is ShopItem => item !== null)
-    };
-  }
-
-  public async buyShopItem(
-    discordId: string,
-    username: string,
-    itemId: string
-  ): Promise<{ ok: boolean; message: string }> {
-    const user = await this.ensureUser(discordId, username);
-    const rotation = this.getOrCreateDailyRotation();
-    if (!rotation.includes(itemId)) return { ok: false, message: 'Item not in today\'s rotation.' };
-    const item = this.findShopItem(itemId);
-    if (!item) return { ok: false, message: 'Unknown item id.' };
-    const owned = db
-      .select()
-      .from(cosmeticsOwned)
-      .where(
-        and(
-          eq(cosmeticsOwned.userId, user.id),
-          eq(cosmeticsOwned.slot, item.slot),
-          eq(cosmeticsOwned.cosmeticId, item.id)
-        )
-      )
-      .get();
-    if (owned) return { ok: false, message: 'You already own this cosmetic.' };
-    try {
-      db.transaction((tx) => {
-        const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
-        if (!wallet) throw new Error('Wallet missing');
-        if (wallet.amount < item.price) throw new Error('Insufficient Molgium');
-        tx.update(balances).set({ amount: wallet.amount - item.price }).where(eq(balances.userId, user.id)).run();
-        tx
-          .insert(cosmeticsOwned)
-          .values({
-            userId: user.id,
-            slot: item.slot,
-            cosmeticId: item.id,
-            acquiredAt: nowMs()
-          })
-          .run();
-      });
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : 'Purchase failed.' };
-    }
-    return { ok: true, message: `Purchased ${item.name} for ${item.price} Molgium.` };
-  }
-
-  public async loadoutView(discordId: string, username: string): Promise<{
-    titleId: string | null;
-    badgeId: string | null;
-    frameId: string | null;
-  }> {
-    const user = await this.ensureUser(discordId, username);
-    const row = db.select().from(loadout).where(eq(loadout.userId, user.id)).get();
-    if (!row) return { titleId: null, badgeId: null, frameId: null };
-    return {
-      titleId: row.titleId,
-      badgeId: row.badgeId,
-      frameId: row.frameId
-    };
-  }
-
-  public async loadoutSet(
-    discordId: string,
-    username: string,
-    slot: CosmeticSlot,
-    itemId: string
-  ): Promise<{ ok: boolean; message: string }> {
-    const user = await this.ensureUser(discordId, username);
-    const item = this.findShopItem(itemId);
-    if (!item || item.slot !== slot) return { ok: false, message: `Invalid ${slot} item id.` };
-    const owned = db
-      .select()
-      .from(cosmeticsOwned)
-      .where(
-        and(
-          eq(cosmeticsOwned.userId, user.id),
-          eq(cosmeticsOwned.slot, slot),
-          eq(cosmeticsOwned.cosmeticId, itemId)
-        )
-      )
-      .get();
-    if (!owned) return { ok: false, message: `You do not own ${itemId}.` };
-    const current = db.select().from(loadout).where(eq(loadout.userId, user.id)).get();
-    if (!current) {
-      db.insert(loadout)
-        .values({
-          userId: user.id,
-          titleId: slot === 'title' ? itemId : null,
-          badgeId: slot === 'badge' ? itemId : null,
-          frameId: slot === 'frame' ? itemId : null,
-          updatedAt: nowMs()
-        })
-        .run();
-    } else {
-      db.update(loadout)
-        .set({
-          titleId: slot === 'title' ? itemId : current.titleId,
-          badgeId: slot === 'badge' ? itemId : current.badgeId,
-          frameId: slot === 'frame' ? itemId : current.frameId,
-          updatedAt: nowMs()
-        })
-        .where(eq(loadout.userId, user.id))
-        .run();
-    }
-    return { ok: true, message: `${slot} set to ${itemId}.` };
   }
 
   private bestOwnedRodTier(owned: Array<{ tier: RodTier }>): RodTier | null {
@@ -2431,6 +3504,25 @@ export class MolgianService {
       'Molgian Bureau - Patch Notes',
       '============================',
       '',
+      '- Endgame (new):',
+      '  - Added class system with paid starter unlock (2500 Molgium).',
+      '  - Added /class quiz recommendation flow.',
+      '  - Added branch-locked progression: Base -> T2 path -> locked T3 specialization.',
+      '  - Added class reset (high cost) to reroll your path.',
+      '',
+      '- Gear and Forge (new):',
+      '  - Added named gear inventory and slot equips.',
+      '  - Added /shop categories for weapons, armor, materials, rods, and jobs.',
+      '  - Added boss crafting recipes with hard-to-get materials.',
+      '  - Added salvage flow for converting gear back into crafting materials.',
+      '',
+      '- Raids (new):',
+      '  - Added co-op raid lobbies with join codes and party size limits.',
+      '  - Raids now run as staged encounters (NPC waves -> elites -> boss).',
+      '  - Added random mutators and anti-repeat encounter generation.',
+      '  - Added four difficulties: Normal, Hard, Nightmare, Infernal.',
+      '  - Added guaranteed Molgium payout on clear plus material and egg drop chances.',
+      '',
       '- Economy:',
       '  - Base salary is now 150 Molgium.',
       '  - Job costs are 10000 / 20000 / 50000.',
@@ -2455,7 +3547,7 @@ export class MolgianService {
       '  - New commands: /missions view and /missions claim.',
       '',
       '- Profiles:',
-      '  - /profile now shows exact active pet passive values.',
+      '  - /profile now shows class path, raid power, and active set bonuses.',
       '',
       '- Reliability:',
       '  - Bot now auto-recreates missing core rows for existing users.',
@@ -3383,7 +4475,9 @@ export class MolgianService {
     eggs: number;
     mythicEggs: number;
     shards: number;
-    loadout: { title: string | null; badge: string | null; frame: string | null };
+    classPath: string;
+    raidPower: number;
+    setBonuses: string;
     dailyMissionsCompleted: number;
     dailyMissionsTotal: number;
     weeklyMissionsCompleted: number;
@@ -3395,7 +4489,7 @@ export class MolgianService {
     const user = await this.ensureUser(discordId, username);
     const wallet = db.select().from(balances).where(eq(balances.userId, user.id)).get();
     const eggs = db.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-    const loadoutRow = db.select().from(loadout).where(eq(loadout.userId, user.id)).get();
+    const raidSummary = this.computeRaidPower(user.id);
     const active = await this.getActivePet(user.id);
     const streak = this.getEffectiveWorkStreak(user.id);
     const streakBonusPct = Math.min(streak * WORK_STREAK_BONUS_PER_DAY, WORK_STREAK_BONUS_CAP);
@@ -3465,11 +4559,9 @@ export class MolgianService {
       eggs: eggs?.eggs ?? 0,
       mythicEggs: eggs?.mythicEggs ?? 0,
       shards: this.getShardDisplayAmount(user.id),
-      loadout: {
-        title: loadoutRow?.titleId ?? null,
-        badge: loadoutRow?.badgeId ?? null,
-        frame: loadoutRow?.frameId ?? null
-      },
+      classPath: raidSummary.classPath,
+      raidPower: raidSummary.power,
+      setBonuses: raidSummary.setBonuses,
       dailyMissionsCompleted: dailyMissions.filter((entry) => entry.state.completed).length,
       dailyMissionsTotal: dailyMissions.length,
       weeklyMissionsCompleted: weeklyMissions.filter((entry) => entry.state.completed).length,

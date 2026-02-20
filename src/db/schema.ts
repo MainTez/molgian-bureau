@@ -229,33 +229,6 @@ export const shards = sqliteTable(
   })
 );
 
-export const cosmeticsOwned = sqliteTable(
-  'cosmetics_owned',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    slot: text('slot').notNull(),
-    cosmeticId: text('cosmetic_id').notNull(),
-    acquiredAt: integer('acquired_at').notNull()
-  },
-  (table) => ({
-    uniqCosmetic: unique('cosmetics_owned_user_slot_cosmetic').on(table.userId, table.slot, table.cosmeticId)
-  })
-);
-
-export const loadout = sqliteTable('loadout', {
-  userId: integer('user_id')
-    .notNull()
-    .primaryKey()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  titleId: text('title_id'),
-  badgeId: text('badge_id'),
-  frameId: text('frame_id'),
-  updatedAt: integer('updated_at').notNull()
-});
-
 export const mythicHallOfFame = sqliteTable(
   'mythic_hall_of_fame',
   {
@@ -343,6 +316,169 @@ export const eventRuns = sqliteTable(
   (table) => ({
     typeIdx: index('event_runs_type_idx').on(table.eventType),
     startedIdx: index('event_runs_started_idx').on(table.startedAt)
+  })
+);
+
+export const userClassProgress = sqliteTable('user_class_progress', {
+  userId: integer('user_id')
+    .notNull()
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  baseClassKey: text('base_class_key'),
+  t2PathKey: text('t2_path_key'),
+  t3SpecKey: text('t3_spec_key'),
+  quizRecommendation: text('quiz_recommendation'),
+  resetCount: integer('reset_count').notNull().default(0),
+  selectedAt: integer('selected_at'),
+  advancedAt: integer('advanced_at'),
+  updatedAt: integer('updated_at').notNull()
+});
+
+export const craftingMaterials = sqliteTable(
+  'crafting_materials',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    materialKey: text('material_key').notNull(),
+    amount: integer('amount').notNull().default(0),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.materialKey] }),
+    nonNegative: check('crafting_materials_non_negative', sql`${table.amount} >= 0`)
+  })
+);
+
+export const gearInstances = sqliteTable(
+  'gear_instances',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    templateKey: text('template_key').notNull(),
+    name: text('name').notNull(),
+    slot: text('slot').notNull(),
+    rarity: text('rarity').notNull(),
+    classAffinity: text('class_affinity'),
+    setKey: text('set_key'),
+    source: text('source').notNull(),
+    power: integer('power').notNull().default(0),
+    guard: integer('guard').notNull().default(0),
+    crit: integer('crit').notNull().default(0),
+    haste: integer('haste').notNull().default(0),
+    precision: integer('precision').notNull().default(0),
+    resolve: integer('resolve').notNull().default(0),
+    yield: integer('yield').notNull().default(0),
+    scavenge: integer('scavenge').notNull().default(0),
+    luckControl: integer('luck_control').notNull().default(0),
+    createdAt: integer('created_at').notNull()
+  },
+  (table) => ({
+    userIdx: index('gear_instances_user_idx').on(table.userId),
+    slotIdx: index('gear_instances_slot_idx').on(table.slot)
+  })
+);
+
+export const userGearEquips = sqliteTable(
+  'user_gear_equips',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    gearInstanceId: integer('gear_instance_id').references(() => gearInstances.id, {
+      onDelete: 'set null'
+    }),
+    equippedAt: integer('equipped_at').notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.slot] }),
+    uniqueGear: unique('user_gear_equips_gear_unique').on(table.gearInstanceId)
+  })
+);
+
+export const raidLobbies = sqliteTable(
+  'raid_lobbies',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    code: text('code').notNull().unique(),
+    ownerUserId: integer('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    bossKey: text('boss_key').notNull(),
+    difficulty: text('difficulty').notNull(),
+    status: text('status').notNull(),
+    channelId: text('channel_id'),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at')
+  },
+  (table) => ({
+    statusIdx: index('raid_lobbies_status_idx').on(table.status),
+    expiresIdx: index('raid_lobbies_expires_idx').on(table.expiresAt)
+  })
+);
+
+export const raidLobbyMembers = sqliteTable(
+  'raid_lobby_members',
+  {
+    lobbyId: integer('lobby_id')
+      .notNull()
+      .references(() => raidLobbies.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    joinedAt: integer('joined_at').notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.lobbyId, table.userId] }),
+    userIdx: index('raid_lobby_members_user_idx').on(table.userId)
+  })
+);
+
+export const raidRuns = sqliteTable(
+  'raid_runs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    lobbyId: integer('lobby_id').references(() => raidLobbies.id, { onDelete: 'set null' }),
+    bossKey: text('boss_key').notNull(),
+    difficulty: text('difficulty').notNull(),
+    mutator: text('mutator'),
+    stageCount: integer('stage_count').notNull(),
+    status: text('status').notNull(),
+    victory: integer('victory').notNull().default(0),
+    startedAt: integer('started_at').notNull(),
+    endedAt: integer('ended_at'),
+    summaryJson: text('summary_json')
+  },
+  (table) => ({
+    startedIdx: index('raid_runs_started_idx').on(table.startedAt),
+    statusIdx: index('raid_runs_status_idx').on(table.status)
+  })
+);
+
+export const raidRunMembers = sqliteTable(
+  'raid_run_members',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => raidRuns.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    contribution: integer('contribution').notNull().default(0),
+    rewardMolgium: integer('reward_molgium').notNull().default(0),
+    eggDropped: integer('egg_dropped').notNull().default(0),
+    materialsJson: text('materials_json'),
+    createdAt: integer('created_at').notNull()
+  },
+  (table) => ({
+    runIdx: index('raid_run_members_run_idx').on(table.runId),
+    userIdx: index('raid_run_members_user_idx').on(table.userId)
   })
 );
 

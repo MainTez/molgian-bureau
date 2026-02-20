@@ -8,6 +8,16 @@ import { appEnv } from '../config/env.js';
 import type { ServiceContainer } from '../services.js';
 import { createBotEmbed, type EmbedTone } from './embeds.js';
 import { CLAIM_CITIZENS_ROLE_BUTTON_ID } from './citizensRole.js';
+import type {
+  BaseClassKey,
+  ClassQuizGoal,
+  ClassQuizStyle,
+  ClassQuizVibe,
+  RaidBossKey,
+  RaidDifficultyKey,
+  ShopCategory,
+  T2PathKey
+} from '../domain/endgame.js';
 
 const formatLeaderboard = (
   rows: Array<{ username: string; value: number; detail?: string }>
@@ -122,49 +132,192 @@ export const handleInteraction = async (
   }
 
   if (interaction.commandName === 'shop') {
-    const buyId = interaction.options.getString('buy_id');
-    if (buyId) {
-      const buyResult = await services.game.buyShopItem(discordId, username, buyId);
-      await replyWithEmbed(interaction, buyResult.message, {
-        tone: buyResult.ok ? 'success' : 'warning',
+    const sub = interaction.options.getSubcommand();
+    if (sub === 'view') {
+      const summary = await services.game.shopView(discordId, username);
+      await replyWithEmbed(
+        interaction,
+        [
+          `Balance: ${summary.balance} Molgium`,
+          '',
+          'Categories:',
+          '- weapons',
+          '- armor',
+          '- materials',
+          '- rods',
+          '- jobs',
+          '',
+          'Use `/shop category type:<name>` to browse.',
+          'Use `/shop buy item_id:<id> quantity:<n>` to purchase.'
+        ].join('\n'),
+        { title: 'Shop' }
+      );
+      return;
+    }
+
+    if (sub === 'category') {
+      const category = interaction.options.getString('type', true) as ShopCategory;
+      const details = await services.game.shopCategory(discordId, username, category);
+      await replyWithEmbed(interaction, details.message, {
+        tone: details.ok ? 'info' : 'warning',
         title: 'Shop'
       });
       return;
     }
-    const shop = await services.game.getShop(discordId, username);
-    const rotating = shop.rotating
-      .map((item) => `${item.id} (${item.slot}) - ${item.price} Molgium`)
-      .join('\n');
-    await replyWithEmbed(
-      interaction,
-      `Balance: ${shop.balance} Molgium\n\nFixed: Rods + Jobs\n\nDaily rotation:\n${rotating || 'No rotation'}`,
-      { title: 'Shop' }
-    );
+
+    const itemId = interaction.options.getString('item_id', true);
+    const quantity = interaction.options.getInteger('quantity') ?? 1;
+    const result = await services.game.shopBuy(discordId, username, itemId, quantity);
+    await replyWithEmbed(interaction, result.message, {
+      tone: result.ok ? 'success' : 'warning',
+      title: 'Shop'
+    });
     return;
   }
 
-  if (interaction.commandName === 'loadout') {
-    const sub = interaction.options.getSubcommand();
-    if (sub === 'view') {
-      const view = await services.game.loadoutView(discordId, username);
-      await replyWithEmbed(
-        interaction,
-        `Title: ${view.titleId ?? 'None'}\nBadge: ${view.badgeId ?? 'None'}\nFrame: ${view.frameId ?? 'None'}`,
-        { title: 'Loadout' }
-      );
+  if (interaction.commandName === 'class') {
+    const sub = interaction.options.getSubcommand(true);
+    if (sub === 'list') {
+      const lines = services.game.classListText();
+      await replyWithEmbed(interaction, lines, { title: 'Class List' });
       return;
     }
-    const group = interaction.options.getSubcommandGroup(true);
-    if (group === 'set') {
-      const slot = interaction.options.getSubcommand(true) as 'title' | 'badge' | 'frame';
-      const itemId = interaction.options.getString('id', true);
-      const result = await services.game.loadoutSet(discordId, username, slot, itemId);
+
+    if (sub === 'quiz') {
+      const style = interaction.options.getString('style', true) as ClassQuizStyle;
+      const goal = interaction.options.getString('goal', true) as ClassQuizGoal;
+      const vibe = interaction.options.getString('vibe', true) as ClassQuizVibe;
+      const result = await services.game.classQuiz(discordId, username, style, goal, vibe);
       await replyWithEmbed(interaction, result.message, {
         tone: result.ok ? 'success' : 'warning',
-        title: 'Loadout'
+        title: 'Class Quiz'
       });
       return;
     }
+
+    if (sub === 'choose') {
+      const baseClass = interaction.options.getString('main', true) as BaseClassKey;
+      const result = await services.game.classChoose(discordId, username, baseClass);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Class Choice'
+      });
+      return;
+    }
+
+    if (sub === 'path') {
+      const text = await services.game.classPath(discordId, username);
+      await replyWithEmbed(interaction, text.message, {
+        tone: text.ok ? 'info' : 'warning',
+        title: 'Class Path'
+      });
+      return;
+    }
+
+    if (sub === 'advance') {
+      const path = interaction.options.getString('path', true) as T2PathKey;
+      const result = await services.game.classAdvance(discordId, username, path);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Class Advance'
+      });
+      return;
+    }
+
+    const confirm = interaction.options.getBoolean('confirm', true);
+    const result = await services.game.classReset(discordId, username, confirm);
+    await replyWithEmbed(interaction, result.message, {
+      tone: result.ok ? 'success' : 'warning',
+      title: 'Class Reset'
+    });
+    return;
+  }
+
+  if (interaction.commandName === 'gear') {
+    const sub = interaction.options.getSubcommand(true);
+    if (sub === 'inventory') {
+      const text = await services.game.gearInventory(discordId, username);
+      await replyWithEmbed(interaction, text.message, {
+        tone: text.ok ? 'info' : 'warning',
+        title: 'Gear Inventory'
+      });
+      return;
+    }
+
+    if (sub === 'equip') {
+      const slot = interaction.options.getString('slot', true);
+      const gearId = interaction.options.getInteger('gear_id', true);
+      const result = await services.game.gearEquip(discordId, username, slot, gearId);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Gear Equip'
+      });
+      return;
+    }
+
+    const slot = interaction.options.getString('slot', true);
+    const result = await services.game.gearUnequip(discordId, username, slot);
+    await replyWithEmbed(interaction, result.message, {
+      tone: result.ok ? 'success' : 'warning',
+      title: 'Gear Unequip'
+    });
+    return;
+  }
+
+  if (interaction.commandName === 'raid') {
+    const sub = interaction.options.getSubcommand(true);
+    if (sub === 'create') {
+      const boss = interaction.options.getString('boss', true) as RaidBossKey;
+      const difficulty = interaction.options.getString('difficulty', true) as RaidDifficultyKey;
+      const result = await services.game.raidCreate(discordId, username, boss, difficulty, interaction.channelId);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Raid Lobby'
+      });
+      return;
+    }
+
+    if (sub === 'join') {
+      const code = interaction.options.getString('code', true);
+      const result = await services.game.raidJoin(discordId, username, code);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Raid Lobby'
+      });
+      return;
+    }
+
+    if (sub === 'leave') {
+      const result = await services.game.raidLeave(discordId, username);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Raid Lobby'
+      });
+      return;
+    }
+
+    if (sub === 'status') {
+      const result = await services.game.raidStatus(discordId, username);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'info' : 'warning',
+        title: 'Raid Lobby'
+      });
+      return;
+    }
+
+    if (sub === 'history') {
+      const result = await services.game.raidHistory(discordId, username);
+      await replyWithEmbed(interaction, result.message, { title: 'Raid History' });
+      return;
+    }
+
+    await interaction.deferReply();
+    const result = await services.game.raidStart(discordId, username);
+    await editReplyWithEmbed(interaction, result.message, {
+      tone: result.ok ? 'success' : 'warning',
+      title: 'Raid Start'
+    });
+    return;
   }
 
   if (interaction.commandName === 'rod') {
@@ -178,7 +331,7 @@ export const handleInteraction = async (
       await replyWithEmbed(interaction, lines.join('\n'), { title: 'Rod Shop' });
       return;
     }
-    const tier = interaction.options.getString('tier', true) as 'starter' | 'improved' | 'elite';
+    const tier = interaction.options.getString('tier', true) as 'starter' | 'improved' | 'elite' | 'god';
     if (sub === 'buy') {
       const result = await services.game.rodBuy(discordId, username, tier);
       await replyWithEmbed(interaction, result.message, {
@@ -374,10 +527,53 @@ export const handleInteraction = async (
   }
 
   if (interaction.commandName === 'forge') {
-    const result = await services.game.forgeMythicEgg(discordId, username);
+    const sub = interaction.options.getSubcommand(true);
+    if (sub === 'mythic_egg') {
+      const result = await services.game.forgeMythicEgg(discordId, username);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Forge'
+      });
+      return;
+    }
+
+    if (sub === 'materials') {
+      const result = await services.game.forgeMaterials(discordId, username);
+      await replyWithEmbed(interaction, result.message, { title: 'Forge Materials' });
+      return;
+    }
+
+    if (sub === 'recipes') {
+      const result = await services.game.forgeRecipes(discordId, username);
+      await replyWithEmbed(interaction, result.message, { title: 'Forge Recipes' });
+      return;
+    }
+
+    if (sub === 'preview') {
+      const recipeId = interaction.options.getString('recipe_id', true);
+      const result = await services.game.forgePreview(discordId, username, recipeId);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'info' : 'warning',
+        title: 'Forge Preview'
+      });
+      return;
+    }
+
+    if (sub === 'craft') {
+      const recipeId = interaction.options.getString('recipe_id', true);
+      const result = await services.game.forgeCraft(discordId, username, recipeId);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Forge Craft'
+      });
+      return;
+    }
+
+    const gearId = interaction.options.getInteger('gear_id', true);
+    const result = await services.game.forgeSalvage(discordId, username, gearId);
     await replyWithEmbed(interaction, result.message, {
       tone: result.ok ? 'success' : 'warning',
-      title: 'Forge'
+      title: 'Forge Salvage'
     });
     return;
   }
@@ -438,8 +634,9 @@ export const handleInteraction = async (
         `Active pet boosts:\n${passiveLines}`,
         `Eggs: ${profile.eggs} (Mythic eggs: ${profile.mythicEggs})`,
         `Shards: ${formatShardValue(profile.shards)}`,
+        `Class: ${profile.classPath}`,
+        `Gear power: ${profile.raidPower} | Set bonuses: ${profile.setBonuses}`,
         `Missions: daily ${profile.dailyMissionsCompleted}/${profile.dailyMissionsTotal}, weekly ${profile.weeklyMissionsCompleted}/${profile.weeklyMissionsTotal}`,
-        `Loadout: title=${profile.loadout.title ?? 'none'}, badge=${profile.loadout.badge ?? 'none'}, frame=${profile.loadout.frame ?? 'none'}`,
         `Lifetime eggs hatched: ${profile.lifetimeEggsHatched}`,
         `Rarest pet owned: ${profile.rarestPetOwned}`,
         `Rarest fish: ${profile.rarestFishOwned}`

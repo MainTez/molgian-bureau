@@ -136,13 +136,25 @@ Core:
 - `/leaderboard mode:<richest|most_eggs_hatched|most_mythics|top_fish_value>`
 - `/patchnotes`
 
-Shop/loadout:
-- `/shop`
-- `/shop buy_id:<cosmetic_id>`
-- `/loadout view`
-- `/loadout set title id:<id>`
-- `/loadout set badge id:<id>`
-- `/loadout set frame id:<id>`
+Shop/endgame:
+- `/shop view`
+- `/shop category type:<weapons|armor|materials|rods|jobs>`
+- `/shop buy item_id:<id> quantity:<n>`
+- `/class list`
+- `/class quiz style:<...> goal:<...> vibe:<...>`
+- `/class choose main:<base_class>`
+- `/class path`
+- `/class advance path:<t2_path>`
+- `/class reset confirm:true`
+- `/gear inventory`
+- `/gear equip slot:<weapon|helmet|chest|gloves|boots|relic> gear_id:<id>`
+- `/gear unequip slot:<...>`
+- `/raid create boss:<boss> difficulty:<normal|hard|nightmare|infernal>`
+- `/raid join code:<lobby_code>`
+- `/raid leave`
+- `/raid start`
+- `/raid status`
+- `/raid history`
 
 Rods/fishing:
 - `/rod shop`
@@ -175,6 +187,11 @@ Eggs/pets:
 - `/pet shard pet_instance_id:<id>`
 - `/pet sell pet_instance_id:<id>`
 - `/shards`
+- `/forge materials`
+- `/forge recipes`
+- `/forge preview recipe_id:<id>`
+- `/forge craft recipe_id:<id>`
+- `/forge salvage gear_id:<id>`
 - `/forge mythic_egg`
 - `/missions view`
 - `/missions claim id:<mission_id>`
@@ -203,6 +220,7 @@ Admin:
 - No trading
 - One active pet per user
 - Same user can win multiple egg events, including back-to-back
+- Endgame enabled: class paths, named gear, co-op raids, and forge crafting
 - Egg events use interactive formats (buttons/reaction/duel/memory/speed), with no math quiz flow
 - Slash replies and event announcements use styled embeds for consistent UI
 - Common duplicate pets shard for `0.5` shards
