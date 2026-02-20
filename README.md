@@ -127,7 +127,8 @@ Core:
 - `/work`
 - `/job list`
 - `/job apply id:<1|2|3>`
-- Job costs: `500`, `1000`, `2000`
+- Job costs: `10000`, `20000`, `50000`
+- Job salary bases: `500`, `1000`, `2000`
 - Base salary: `150 Molgium`
 - `/profile`
 - `/profile user:@user` (optional target)

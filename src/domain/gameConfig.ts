@@ -11,9 +11,9 @@ export const WORK_STREAK_BONUS_PER_DAY = 0.03;
 export const WORK_STREAK_BONUS_CAP = 0.3;
 
 export const RAISE_TIERS = [
-  { id: 1, cost: 500, newSalaryBase: 250 },
-  { id: 2, cost: 1000, newSalaryBase: 500 },
-  { id: 3, cost: 2000, newSalaryBase: 900 }
+  { id: 1, cost: 10000, newSalaryBase: 500 },
+  { id: 2, cost: 20000, newSalaryBase: 1000 },
+  { id: 3, cost: 50000, newSalaryBase: 2000 }
 ] as const;
 
 export const ROD_CONFIG: Record<
