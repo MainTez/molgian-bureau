@@ -161,6 +161,7 @@ Fisher pet note:
 Gambling:
 - `/gamble coinflip amount:<n>`
 - `/gamble dice amount:<n>`
+- Minimum gamble amount: `50 Molgium`
 - `/jackpot enter amount:<n>`
 - `/jackpot status`
 - `/treasury`

@@ -120,7 +120,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
         .setName('coinflip')
         .setDescription('50/50 coinflip.')
         .addIntegerOption((opt) =>
-          opt.setName('amount').setDescription('Molgium amount').setRequired(true).setMinValue(1)
+          opt.setName('amount').setDescription('Molgium amount').setRequired(true).setMinValue(50)
         )
     )
     .addSubcommand((sub) =>
@@ -128,7 +128,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
         .setName('dice')
         .setDescription('High dice beats house dice.')
         .addIntegerOption((opt) =>
-          opt.setName('amount').setDescription('Molgium amount').setRequired(true).setMinValue(1)
+          opt.setName('amount').setDescription('Molgium amount').setRequired(true).setMinValue(50)
         )
     ),
   new SlashCommandBuilder()

@@ -2109,7 +2109,7 @@ export class MolgianService {
     amount: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
-    if (amount <= 0) return { ok: false, message: 'Amount must be positive.' };
+    if (amount < 50) return { ok: false, message: 'Minimum gamble amount is 50 Molgium.' };
     let postBetBalance = 0;
     try {
       postBetBalance = this.changeBalance(user.id, -amount);
@@ -2147,7 +2147,7 @@ export class MolgianService {
     amount: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
-    if (amount <= 0) return { ok: false, message: 'Amount must be positive.' };
+    if (amount < 50) return { ok: false, message: 'Minimum gamble amount is 50 Molgium.' };
     let postBetBalance = 0;
     try {
       postBetBalance = this.changeBalance(user.id, -amount);
@@ -2435,6 +2435,7 @@ export class MolgianService {
       '  - Base salary is now 150 Molgium.',
       '  - Job costs are 10000 / 20000 / 50000.',
       '  - Job salary bases are 500 / 1000 / 2000.',
+      '  - Gamble minimum bet is 50 Molgium.',
       '  - Work streak bonus added: +3% per day (cap +30%).',
       '',
       '- Fishing and Hall of Fame:',
