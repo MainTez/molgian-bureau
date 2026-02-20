@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nextEggRescheduleDelayMs, remainingEggWinsToday } from '../src/domain/eggs/scheduling.js';
+import { PET_RAID_LOOT_BONUS_CHANCE, PET_RAID_MOLGIUM_WIN_BONUS, PET_TYPES } from '../src/domain/gameConfig.js';
 import { rollHatchRarity } from '../src/domain/rolls.js';
 
 describe('egg scheduling helpers', () => {
@@ -30,6 +31,19 @@ describe('hatch rarity rolls', () => {
     const allowed = new Set(['Common', 'Rare', 'Epic', 'Legendary', 'Mythic']);
     for (let i = 0; i < 500; i += 1) {
       expect(allowed.has(rollHatchRarity(true))).toBe(true);
+    }
+  });
+});
+
+describe('raid pet config', () => {
+  it('includes Raid pet type in hatch pool', () => {
+    expect(PET_TYPES.includes('Raid')).toBe(true);
+  });
+
+  it('has valid positive raid bonuses by rarity', () => {
+    for (const rarity of ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic'] as const) {
+      expect(PET_RAID_LOOT_BONUS_CHANCE[rarity]).toBeGreaterThan(0);
+      expect(PET_RAID_MOLGIUM_WIN_BONUS[rarity]).toBeGreaterThan(0);
     }
   });
 });

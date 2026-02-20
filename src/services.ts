@@ -38,6 +38,8 @@ import {
   PET_FISHER_BUMP_CHANCE,
   PET_FISHER_SELL_BONUS,
   PET_GAMBLER_WIN_BONUS,
+  PET_RAID_LOOT_BONUS_CHANCE,
+  PET_RAID_MOLGIUM_WIN_BONUS,
   PET_TYPES,
   PET_WORKER_MULTIPLIER,
   RAISE_TIERS,
@@ -2192,17 +2194,26 @@ export class MolgianService {
     const rewardLines: string[] = [];
     for (const member of memberPower) {
       this.ensureMaterialRows(member.userId);
-      const payout = victory
+      const activePet = await this.getActivePet(member.userId);
+      const raidLootBonusChance =
+        activePet?.petType === 'Raid' ? PET_RAID_LOOT_BONUS_CHANCE[activePet.rarity] : 0;
+      const raidMolgiumWinBonusRate =
+        victory && activePet?.petType === 'Raid' ? PET_RAID_MOLGIUM_WIN_BONUS[activePet.rarity] : 0;
+      const rollWithLootBonus = (baseChance: number): boolean =>
+        Math.random() < Math.min(0.95, Math.max(0, baseChance + raidLootBonusChance));
+
+      const basePayout = victory
         ? randomIntInclusive(difficulty.payoutMin, difficulty.payoutMax)
         : Math.floor(randomIntInclusive(difficulty.payoutMin, difficulty.payoutMax) * 0.25);
+      const payout = victory ? basePayout + Math.floor(basePayout * raidMolgiumWinBonusRate) : basePayout;
       const materialDrops: Partial<Record<MaterialKey, number>> = {
         scrap: Math.max(1, Math.floor(randomIntInclusive(2, 5) * difficulty.materialMultiplier))
       };
-      if (victory && Math.random() < 0.55) materialDrops.core = randomIntInclusive(1, 2);
-      if (victory && Math.random() < 0.35) materialDrops.prism = 1;
-      if (victory && Math.random() < 0.22) materialDrops.void_alloy = 1;
-      if (victory && Math.random() < difficulty.bossCoreDropChance) materialDrops.boss_core = 1;
-      const eggDrop = victory && Math.random() < difficulty.eggDropChance ? 1 : 0;
+      if (victory && rollWithLootBonus(0.55)) materialDrops.core = randomIntInclusive(1, 2);
+      if (victory && rollWithLootBonus(0.35)) materialDrops.prism = 1;
+      if (victory && rollWithLootBonus(0.22)) materialDrops.void_alloy = 1;
+      if (victory && rollWithLootBonus(difficulty.bossCoreDropChance)) materialDrops.boss_core = 1;
+      const eggDrop = victory && rollWithLootBonus(difficulty.eggDropChance) ? 1 : 0;
 
       db.transaction((tx) => {
         const wallet = tx.select().from(balances).where(eq(balances.userId, member.userId)).get();
@@ -2251,8 +2262,12 @@ export class MolgianService {
         })
         .run();
 
+      const raidPetBonusText =
+        activePet?.petType === 'Raid'
+          ? ` | raid pet bonus: +${formatPercent(raidLootBonusChance * 100)} loot chance${victory ? `, +${formatPercent(raidMolgiumWinBonusRate * 100)} Molgium on win` : ''}`
+          : '';
       rewardLines.push(
-        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}`
+        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}${raidPetBonusText}`
       );
     }
 
@@ -3522,6 +3537,7 @@ export class MolgianService {
       '  - Added random mutators and anti-repeat encounter generation.',
       '  - Added four difficulties: Normal, Hard, Nightmare, Infernal.',
       '  - Added guaranteed Molgium payout on clear plus material and egg drop chances.',
+      '  - Added Raid pets: higher raid loot chance and extra Molgium on raid wins.',
       '',
       '- Economy:',
       '  - Base salary is now 150 Molgium.',
@@ -4508,6 +4524,14 @@ export class MolgianService {
       }
       if (active.petType === 'Event') {
         activePetBonuses.push(`Egg event win bonus: +${PET_EVENT_BONUS[active.rarity]} Molgium`);
+      }
+      if (active.petType === 'Raid') {
+        activePetBonuses.push(
+          `Raid loot chance bonus: +${formatPercent(PET_RAID_LOOT_BONUS_CHANCE[active.rarity] * 100)}`
+        );
+        activePetBonuses.push(
+          `Raid win Molgium bonus: +${formatPercent(PET_RAID_MOLGIUM_WIN_BONUS[active.rarity] * 100)}`
+        );
       }
     }
     const missionStates = MISSION_DEFINITIONS.map((mission) => ({

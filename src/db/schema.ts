@@ -489,7 +489,7 @@ export const appState = sqliteTable('app_state', {
 });
 
 export const RARITIES = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic'] as const;
-export const PET_TYPES = ['Worker', 'Fisher', 'Gambler', 'Event'] as const;
+export const PET_TYPES = ['Worker', 'Fisher', 'Gambler', 'Event', 'Raid'] as const;
 export const ROD_TIERS = ['starter', 'improved', 'elite', 'god'] as const;
 
 export type Rarity = (typeof RARITIES)[number];

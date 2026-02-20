@@ -193,6 +193,22 @@ export const PET_EVENT_BONUS: Record<Rarity, number> = {
   Mythic: 220
 };
 
+export const PET_RAID_MOLGIUM_WIN_BONUS: Record<Rarity, number> = {
+  Common: 0.03,
+  Rare: 0.05,
+  Epic: 0.07,
+  Legendary: 0.09,
+  Mythic: 0.12
+};
+
+export const PET_RAID_LOOT_BONUS_CHANCE: Record<Rarity, number> = {
+  Common: 0.015,
+  Rare: 0.025,
+  Epic: 0.035,
+  Legendary: 0.05,
+  Mythic: 0.07
+};
+
 export const SHARD_VALUES: Record<Rarity, number> = {
   Common: 1,
   Rare: 3,
@@ -211,7 +227,7 @@ export const SELL_VALUES: Record<Rarity, number> = {
 
 export const FORGE_MYTHIC_EGG_COST = 250;
 
-export const PET_TYPES: PetType[] = ['Worker', 'Fisher', 'Gambler', 'Event'];
+export const PET_TYPES: PetType[] = ['Worker', 'Fisher', 'Gambler', 'Event', 'Raid'];
 
 export const FISH_COOLDOWN_MS = 15 * 60 * 1000;
 export const JACKPOT_COOLDOWN_MS = 15 * 60 * 1000;
