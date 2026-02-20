@@ -86,6 +86,7 @@ import {
   type ClassQuizGoal,
   type ClassQuizStyle,
   type ClassQuizVibe,
+  type GearRecipe,
   type GearRarity,
   type GearSlot,
   type MaterialKey,
@@ -232,6 +233,33 @@ const gearSetBonuses: Record<string, GearSetBonusInfo> = {
     fourPieceBonus: '+29% encounter volatility leverage.'
   }
 };
+
+const forgeClassAliases: Record<BaseClassKey, string> = {
+  bureau_enforcer: 'enforcer',
+  shadow_clerk: 'shadow',
+  relic_engineer: 'engineer',
+  abyss_angler: 'angler',
+  chaos_oracle: 'oracle'
+};
+
+const forgeSlotOrder: GearSlot[] = ['weapon', 'helmet', 'chest', 'gloves', 'boots', 'relic'];
+const forgeSlotLabel: Record<GearSlot, string> = {
+  weapon: 'Weapon',
+  helmet: 'Helmet',
+  chest: 'Chest',
+  gloves: 'Gloves',
+  boots: 'Boots',
+  relic: 'Relic'
+};
+
+const materialLabels: Record<MaterialKey, string> = {
+  scrap: 'Scrap',
+  core: 'Core',
+  prism: 'Prism',
+  void_alloy: 'Void Alloy',
+  boss_core: 'Boss Core'
+};
+
 const claimWords = ['MOLGIUM', 'BUREAU', 'HATCH', 'CHAOS', 'ROD'];
 const emojiPool = ['🐟', '🥚', '💰', '🔥', '⭐', '🧪', '🧿', '🫧'];
 const fishNameWords = [
@@ -1299,6 +1327,34 @@ export class MolgianService {
     return `${base.name} -> ${selectedPath.name} -> ${selectedPath.t3Name}`;
   }
 
+  private classNameByKey(value: string | null | undefined): string {
+    if (!value) return 'None';
+    const base = baseClassByKey(value as BaseClassKey);
+    return base?.name ?? toTitleFromSnake(value);
+  }
+
+  private forgeShortKey(recipe: GearRecipe): string {
+    return `${forgeClassAliases[recipe.classAffinity]}:${recipe.slot}`;
+  }
+
+  private resolveForgeRecipe(recipeInput: string): GearRecipe | null {
+    const normalized = recipeInput.trim().toLowerCase();
+    if (!normalized) return null;
+
+    const direct = BOSS_GEAR_RECIPES.find((entry) => entry.id === normalized);
+    if (direct) return direct;
+
+    const short = BOSS_GEAR_RECIPES.find((entry) => this.forgeShortKey(entry) === normalized);
+    if (short) return short;
+
+    const classKeyStyle = BOSS_GEAR_RECIPES.find(
+      (entry) => `${entry.classAffinity}:${entry.slot}` === normalized
+    );
+    if (classKeyStyle) return classKeyStyle;
+
+    return null;
+  }
+
   private gearSlots(): GearSlot[] {
     return ['weapon', 'helmet', 'chest', 'gloves', 'boots', 'relic'];
   }
@@ -1378,13 +1434,16 @@ export class MolgianService {
 
   public classListText(): string {
     const lines: string[] = [];
-    lines.push(`Starter class unlock cost: ${STARTER_CLASS_COST} Molgium.`);
-    lines.push('Choose one base class, then one T2 path. T2 locks your T3 specialization.');
+    lines.push(`Starter unlock cost: ${STARTER_CLASS_COST} Molgium`);
+    lines.push('Progression: Base class -> T2 path -> locked T3 specialization');
     for (const base of BASE_CLASS_DEFINITIONS) {
       lines.push('');
-      lines.push(`- ${base.name}: ${base.description}`);
+      lines.push(`${base.name} (key: ${base.key})`);
+      lines.push(`Set: ${base.setName}`);
+      lines.push(base.description);
+      lines.push('Paths:');
       for (const path of base.paths) {
-        lines.push(`  • ${path.name} -> ${path.t3Name}`);
+        lines.push(`- ${path.name} -> ${path.t3Name}`);
       }
     }
     return lines.join('\n');
@@ -1407,9 +1466,10 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `Recommended class: **${result.recommended.name}**\n` +
-        `${result.recommended.description}\n` +
-        `Try /class choose main:${result.recommended.key}`
+        `Recommended class: ${result.recommended.name}\n` +
+        `Why: ${result.recommended.description}\n` +
+        `Set: ${result.recommended.setName}\n` +
+        `Next step: /class choose main:${result.recommended.key}`
     };
   }
 
@@ -1496,8 +1556,10 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `Class chosen: ${base.name}. Cost ${STARTER_CLASS_COST} Molgium.\n` +
-        `Starter gear equipped: ${base.setPrefix} Recruit Armament + Recruit Cuirass.\n` +
+        `Class unlocked: ${base.name}\n` +
+        `Cost: ${STARTER_CLASS_COST} Molgium\n` +
+        `Starter gear equipped: ${base.setPrefix} Recruit Armament + ${base.setPrefix} Recruit Cuirass\n` +
+        `Next step: /class advance path:<path_key>\n` +
         `New balance: ${newBalance} Molgium.`
     };
   }
@@ -1509,9 +1571,10 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `Current class path: ${pathText}\n` +
+        `Current path: ${pathText}\n` +
         `Resets used: ${row.resetCount}\n` +
-        `Reset cost: ${CLASS_RESET_COST} Molgium.`
+        `Reset cost: ${CLASS_RESET_COST} Molgium\n` +
+        'Tip: Use /class list to review all paths.'
     };
   }
 
@@ -1538,7 +1601,7 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `T2 path selected: ${path.name}\n` +
+        `Path selected: ${path.name}\n` +
         `T3 specialization locked: ${path.t3Name}\n` +
         'Your set bonuses now scale with this specialization.'
     };
@@ -1582,7 +1645,10 @@ export class MolgianService {
 
     return {
       ok: true,
-      message: `Class reset complete for ${CLASS_RESET_COST} Molgium. New balance: ${nextBalance} Molgium.`
+      message:
+        `Class reset complete.\n` +
+        `Cost: ${CLASS_RESET_COST} Molgium\n` +
+        `New balance: ${nextBalance} Molgium.`
     };
   }
 
@@ -1603,19 +1669,20 @@ export class MolgianService {
       if (offers.length === 0) return { ok: false, message: `No ${category} offers right now.` };
       const lines = offers.map(
         (offer) =>
-          `${offer.id}: ${offer.name} [${offer.rarity}] (${offer.slot}) - ${offer.price} Molgium` +
-          `${offer.classAffinity ? ` | affinity: ${offer.classAffinity}` : ''}`
+          `- ${offer.name} [${offer.rarity}] | ${forgeSlotLabel[offer.slot]} | ${offer.price} Molgium` +
+          `${offer.classAffinity ? ` | affinity: ${this.classNameByKey(offer.classAffinity)}` : ''}` +
+          ` | item_id ${offer.id}`
       );
-      return { ok: true, message: `Category: ${category}\n${lines.join('\n')}` };
+      return { ok: true, message: `Shop category: ${toTitleFromSnake(category)}\n${lines.join('\n')}` };
     }
 
     if (category === 'materials') {
       this.ensureMaterialRows(user.id);
       const lines = SHOP_MATERIAL_KEYS.map((key) => {
         const amount = this.materialAmount(user.id, key);
-        return `${key}: ${MATERIAL_SHOP_PRICES[key]} Molgium each (owned ${amount})`;
+        return `- ${materialLabels[key]}: ${MATERIAL_SHOP_PRICES[key]} Molgium each (owned ${amount}) | item_id material_${key}`;
       });
-      return { ok: true, message: `Category: materials\n${lines.join('\n')}` };
+      return { ok: true, message: `Shop category: Materials\n${lines.join('\n')}` };
     }
 
     if (category === 'rods') {
@@ -1630,9 +1697,12 @@ export class MolgianService {
     const jobs = await this.jobList(discordId, username);
     const lines = jobs.tiers.map(
       (tier) =>
-        `job_${tier.id}: apply cost ${tier.cost}, SalaryBase ${tier.newSalaryBase}${tier.owned ? ' [hired]' : ''}`
+        `- Job ${tier.id}: cost ${tier.cost}, salary ${tier.newSalaryBase}${tier.owned ? ' [owned]' : ''} | item_id job_${tier.id}`
     );
-    return { ok: true, message: `Category: jobs\nCurrent SalaryBase: ${jobs.currentSalaryBase}\n${lines.join('\n')}` };
+    return {
+      ok: true,
+      message: `Shop category: Jobs\nCurrent salary: ${jobs.currentSalaryBase}\n${lines.join('\n')}`
+    };
   }
 
   public async shopBuy(
@@ -1683,8 +1753,9 @@ export class MolgianService {
       return {
         ok: true,
         message:
-          `Purchased ${qty}x ${gearOffer.name} for ${cost} Molgium.\n` +
-          `Created gear id(s): ${created.join(', ')}\n` +
+          `Purchase complete: ${qty}x ${gearOffer.name}\n` +
+          `Total cost: ${cost} Molgium\n` +
+          `New gear id(s): ${created.join(', ')}\n` +
           `New balance: ${newBalance} Molgium.`
       };
     }
@@ -1721,8 +1792,9 @@ export class MolgianService {
       return {
         ok: true,
         message:
-          `Purchased ${qty}x ${material} for ${cost} Molgium.\n` +
-          `${material} now: ${newMaterialAmount}\n` +
+          `Purchase complete: ${qty}x ${materialLabels[material]}\n` +
+          `Total cost: ${cost} Molgium\n` +
+          `${materialLabels[material]} now: ${newMaterialAmount}\n` +
           `New balance: ${newBalance} Molgium.`
       };
     }
@@ -1758,9 +1830,9 @@ export class MolgianService {
     const equippedSet = new Set(equipRows.map((entry) => entry.gearInstanceId).filter((id): id is number => !!id));
 
     const lines = rows.slice(0, 30).map((row) => {
-      const flag = equippedSet.has(row.id) ? ' [EQUIPPED]' : '';
+      const equippedTag = equippedSet.has(row.id) ? ' [EQUIPPED]' : '';
       return (
-        `#${row.id} ${row.name} [${row.rarity}] (${row.slot})${flag}\n` +
+        `- #${row.id} ${row.name} [${row.rarity}] | ${forgeSlotLabel[row.slot as GearSlot]}${equippedTag}\n` +
         `  ${formatStats({
           power: row.power,
           guard: row.guard,
@@ -1778,9 +1850,9 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `Owned gear: ${rows.length}\n` +
+        `Gear inventory (${rows.length} total)\n` +
         `${lines.join('\n')}` +
-        `${hidden > 0 ? `\n...and ${hidden} more.` : ''}`
+        `${hidden > 0 ? `\n...and ${hidden} more items.` : ''}`
     };
   }
 
@@ -1799,7 +1871,12 @@ export class MolgianService {
       .where(and(eq(gearInstances.id, gearId), eq(gearInstances.userId, user.id)))
       .get();
     if (!row) return { ok: false, message: 'Gear not found.' };
-    if (row.slot !== slot) return { ok: false, message: `Gear #${gearId} fits slot ${row.slot}, not ${slot}.` };
+    if (row.slot !== slot) {
+      return {
+        ok: false,
+        message: `Wrong slot. Gear #${gearId} fits ${forgeSlotLabel[row.slot as GearSlot]}, not ${forgeSlotLabel[slot]}.`
+      };
+    }
     db.insert(userGearEquips)
       .values({ userId: user.id, slot, gearInstanceId: row.id, equippedAt: nowMs() })
       .onConflictDoUpdate({
@@ -1807,7 +1884,7 @@ export class MolgianService {
         set: { gearInstanceId: row.id, equippedAt: nowMs() }
       })
       .run();
-    return { ok: true, message: `Equipped ${row.name} (#${row.id}) to ${slot}.` };
+    return { ok: true, message: `Equipped ${row.name} (#${row.id}) to ${forgeSlotLabel[slot]}.` };
   }
 
   public async gearUnequip(
@@ -1823,28 +1900,49 @@ export class MolgianService {
       .from(userGearEquips)
       .where(and(eq(userGearEquips.userId, user.id), eq(userGearEquips.slot, slot)))
       .get();
-    if (!existing) return { ok: false, message: `No gear equipped in slot ${slot}.` };
+    if (!existing) return { ok: false, message: `No gear equipped in ${forgeSlotLabel[slot]}.` };
     db
       .delete(userGearEquips)
       .where(and(eq(userGearEquips.userId, user.id), eq(userGearEquips.slot, slot)))
       .run();
-    return { ok: true, message: `Unequipped slot ${slot}.` };
+    return { ok: true, message: `Unequipped ${forgeSlotLabel[slot]}.` };
   }
 
   public async forgeMaterials(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
     this.ensureMaterialRows(user.id);
-    const lines = MATERIAL_KEYS.map((key) => `${key}: ${this.materialAmount(user.id, key)}`);
-    return { ok: true, message: lines.join('\n') };
+    const lines = MATERIAL_KEYS.map((key) => `- ${materialLabels[key]}: ${this.materialAmount(user.id, key)}`);
+    return {
+      ok: true,
+      message:
+        `Forge materials for ${username}\n` +
+        `${lines.join('\n')}\n` +
+        'Tip: buy base mats in /shop category type:materials'
+    };
   }
 
   public async forgeRecipes(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
     this.ensureClassProgressRow(user.id);
-    const lines = BOSS_GEAR_RECIPES.map(
-      (entry) =>
-        `${entry.id}: ${entry.itemName} [${entry.rarity}] (${entry.slot}) | set ${entry.setName} | fee ${entry.fee}`
-    );
+    const lines: string[] = [
+      'Use a short recipe key for preview/craft.',
+      'Example: /forge preview recipe_id:enforcer:weapon',
+      'Example: /forge craft recipe_id:enforcer:weapon'
+    ];
+
+    for (const base of BASE_CLASS_DEFINITIONS) {
+      lines.push('');
+      lines.push(`${base.name} - ${base.setName}`);
+      const recipes = BOSS_GEAR_RECIPES
+        .filter((entry) => entry.classAffinity === base.key)
+        .sort((a, b) => forgeSlotOrder.indexOf(a.slot) - forgeSlotOrder.indexOf(b.slot));
+      for (const recipe of recipes) {
+        lines.push(
+          `- ${forgeSlotLabel[recipe.slot]}: ${recipe.itemName} [${recipe.rarity}] | fee ${recipe.fee} | key ${this.forgeShortKey(recipe)}`
+        );
+      }
+    }
+
     return { ok: true, message: lines.join('\n') };
   }
 
@@ -1855,21 +1953,32 @@ export class MolgianService {
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
     this.ensureMaterialRows(user.id);
-    const recipe = BOSS_GEAR_RECIPES.find((entry) => entry.id === recipeId);
-    if (!recipe) return { ok: false, message: `Recipe not found: ${recipeId}` };
-    const materialLines = (Object.entries(recipe.materials) as Array<[MaterialKey, number]>).map(
-      ([key, amount]) => `${key}: need ${amount}, owned ${this.materialAmount(user.id, key)}`
-    );
+    const recipe = this.resolveForgeRecipe(recipeId);
+    if (!recipe) {
+      return {
+        ok: false,
+        message: `Recipe not found: ${recipeId}\nUse /forge recipes and copy a key like enforcer:weapon`
+      };
+    }
+    const materialLines = (Object.entries(recipe.materials) as Array<[MaterialKey, number]>).map(([key, amount]) => {
+      const owned = this.materialAmount(user.id, key);
+      const missing = Math.max(0, amount - owned);
+      return `- ${materialLabels[key]}: need ${amount}, owned ${owned}${missing > 0 ? `, missing ${missing}` : ''}`;
+    });
+    const statLines = recipe.statRanges.map((range) => {
+      const statLabel = range.key === 'luckControl' ? 'Luck Control' : toTitleFromSnake(range.key);
+      return `- ${statLabel}: ${range.min}-${range.max}`;
+    });
     return {
       ok: true,
       message:
-        `${recipe.itemName} [${recipe.rarity}] (${recipe.slot})\n` +
+        `${recipe.itemName} [${recipe.rarity}] | ${forgeSlotLabel[recipe.slot]}\n` +
+        `Short key: ${this.forgeShortKey(recipe)}\n` +
+        `Full key: ${recipe.id}\n` +
         `Set: ${recipe.setName}\n` +
-        `Class affinity: ${recipe.classAffinity}\n` +
+        `Class affinity: ${this.classNameByKey(recipe.classAffinity)}\n` +
         `Fee: ${recipe.fee} Molgium\n` +
-        `Stats: ${recipe.statRanges
-          .map((range) => `${range.key} ${range.min}-${range.max}`)
-          .join(', ')}\n` +
+        `Potential stats:\n${statLines.join('\n')}\n` +
         `Materials:\n${materialLines.join('\n')}`
     };
   }
@@ -1885,8 +1994,13 @@ export class MolgianService {
     this.ensureMaterialRows(user.id);
     const classRow = this.ensureClassProgressRow(user.id);
     if (!classRow.baseClassKey) return { ok: false, message: 'Pick a class first with /class choose.' };
-    const recipe = BOSS_GEAR_RECIPES.find((entry) => entry.id === recipeId);
-    if (!recipe) return { ok: false, message: `Recipe not found: ${recipeId}` };
+    const recipe = this.resolveForgeRecipe(recipeId);
+    if (!recipe) {
+      return {
+        ok: false,
+        message: `Recipe not found: ${recipeId}\nUse /forge recipes and copy a key like enforcer:weapon`
+      };
+    }
 
     let newBalance = 0;
     let craftedId = 0;
@@ -1940,8 +2054,10 @@ export class MolgianService {
     return {
       ok: true,
       message:
-        `Crafted ${recipe.itemName} (#${craftedId}).\n` +
+        `Forge success: ${recipe.itemName} (#${craftedId})\n` +
+        `Recipe key: ${this.forgeShortKey(recipe)}\n` +
         `Set: ${recipe.setName}\n` +
+        `Cost: ${recipe.fee} Molgium\n` +
         `New balance: ${newBalance} Molgium.`
     };
   }
@@ -1990,10 +2106,13 @@ export class MolgianService {
 
     const rewardText = (Object.entries(rewards) as Array<[MaterialKey, number]>)
       .filter(([, amount]) => amount > 0)
-      .map(([key, amount]) => `${key} +${amount}`)
+      .map(([key, amount]) => `${materialLabels[key]} +${amount}`)
       .join(', ');
 
-    return { ok: true, message: `Salvaged ${gear.name}. Materials gained: ${rewardText || 'none'}.` };
+    return {
+      ok: true,
+      message: `Salvaged ${gear.name}.\nMaterials gained: ${rewardText || 'none'}.`
+    };
   }
 
   private raidCooldownKey(userId: number): string {
@@ -2088,6 +2207,7 @@ export class MolgianService {
     if (this.activeLobbyForUser(user.id)) return { ok: false, message: 'You are already in an active lobby.' };
     const entryFee = RAID_ENTRY_FEES[difficulty];
     const wipePenalty = raidWipePenalty(difficulty);
+    const bossLabel = RAID_BOSSES.find((entry) => entry.key === bossKey)?.name ?? toTitleFromSnake(bossKey);
 
     let code = this.randomLobbyCode();
     for (let i = 0; i < 10; i += 1) {
@@ -2118,11 +2238,13 @@ export class MolgianService {
       ok: true,
       message:
         `Raid lobby created: ${code}\n` +
-        `Boss: ${bossKey}\nDifficulty: ${difficulty}\n` +
-        `Entry fee: ${entryFee} each\n` +
-        `Wipe penalty: ${wipePenalty} each\n` +
-        `Raid sink split: 50% Treasury / 50% burn\n` +
-        `Lobby expires in 2 minutes.\nUse /raid join code:${code}`
+        `Boss: ${bossLabel}\n` +
+        `Difficulty: ${RAID_DIFFICULTIES[difficulty].label}\n` +
+        `Entry fee: ${entryFee} Molgium per player\n` +
+        `Wipe penalty: ${wipePenalty} Molgium per player\n` +
+        'Sink split: 50% Treasury / 50% burned\n' +
+        'Lobby expires in 2 minutes.\n' +
+        `Invite players: /raid join code:${code}`
     };
   }
 
@@ -2153,7 +2275,7 @@ export class MolgianService {
       .values({ lobbyId: lobby.id, userId: user.id, joinedAt: nowMs() })
       .onConflictDoNothing()
       .run();
-    return { ok: true, message: `Joined raid lobby ${code}.` };
+    return { ok: true, message: `Joined raid lobby ${code}. Use /raid status to check the party.` };
   }
 
   public async raidLeave(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
@@ -2168,7 +2290,7 @@ export class MolgianService {
       .delete(raidLobbyMembers)
       .where(and(eq(raidLobbyMembers.lobbyId, lobby.id), eq(raidLobbyMembers.userId, user.id)))
       .run();
-    return { ok: true, message: `Left lobby ${lobby.code}.` };
+    return { ok: true, message: `You left lobby ${lobby.code}.` };
   }
 
   public async raidStatus(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
@@ -2176,12 +2298,17 @@ export class MolgianService {
     const lobby = this.activeLobbyForUser(user.id);
     if (!lobby) return { ok: false, message: 'You are not in an active raid lobby.' };
     const members = this.raidMemberUsernames(lobby.id);
+    const bossLabel = RAID_BOSSES.find((entry) => entry.key === lobby.bossKey)?.name ?? toTitleFromSnake(lobby.bossKey);
+    const difficultyLabel =
+      RAID_DIFFICULTIES[lobby.difficulty as RaidDifficultyKey]?.label ?? toTitleFromSnake(lobby.difficulty);
+    const statusLabel = lobby.status === 'open' ? 'Open' : lobby.status === 'running' ? 'Running' : lobby.status;
     return {
       ok: true,
       message:
-        `Lobby ${lobby.code} [${lobby.status}]\n` +
-        `Boss: ${lobby.bossKey}\nDifficulty: ${lobby.difficulty}\n` +
-        `Members (${members.length}/${RAID_MAX_PARTY_SIZE}): ${members.map((member) => member.username).join(', ')}`
+        `Lobby ${lobby.code} [${statusLabel}]\n` +
+        `Boss: ${bossLabel}\n` +
+        `Difficulty: ${difficultyLabel}\n` +
+        `Members (${members.length}/${RAID_MAX_PARTY_SIZE}):\n- ${members.map((member) => member.username).join('\n- ')}`
     };
   }
 
@@ -2198,12 +2325,15 @@ export class MolgianService {
     const lines = rows.map((row) => {
       const run = db.select().from(raidRuns).where(eq(raidRuns.id, row.runId)).get();
       if (!run) return `Run ${row.runId}: missing`;
+      const bossLabel = RAID_BOSSES.find((entry) => entry.key === run.bossKey)?.name ?? toTitleFromSnake(run.bossKey);
+      const difficultyLabel =
+        RAID_DIFFICULTIES[run.difficulty as RaidDifficultyKey]?.label ?? toTitleFromSnake(run.difficulty);
       return (
-        `Run #${run.id} ${run.bossKey} [${run.difficulty}] - ${run.victory === 1 ? 'WIN' : 'LOSS'} | ` +
-        `reward ${row.rewardMolgium} Molgium${row.eggDropped ? ' +egg' : ''}`
+        `- Run #${run.id}: ${bossLabel} [${difficultyLabel}] | ${run.victory === 1 ? 'WIN' : 'LOSS'} | ` +
+        `reward ${row.rewardMolgium} Molgium${row.eggDropped ? ' +1 egg' : ''}`
       );
     });
-    return { ok: true, message: lines.join('\n') };
+    return { ok: true, message: `Recent raid history:\n${lines.join('\n')}` };
   }
 
   public async raidStart(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
@@ -2256,6 +2386,7 @@ export class MolgianService {
 
     db.update(raidLobbies).set({ status: 'running', startedAt: nowMs() }).where(eq(raidLobbies.id, lobby.id)).run();
     const difficulty = RAID_DIFFICULTIES[lobby.difficulty as RaidDifficultyKey];
+    const bossLabel = RAID_BOSSES.find((entry) => entry.key === lobby.bossKey)?.name ?? toTitleFromSnake(lobby.bossKey);
     const previous = this.getState(this.raidRecentEncountersKey());
     const recent = previous ? (JSON.parse(previous) as string[]) : [];
     const generated = generateRaidEncounters(lobby.bossKey as RaidBossKey, recent);
@@ -2268,7 +2399,7 @@ export class MolgianService {
     const partyPowerBase = memberPower.reduce((sum, member) => sum + member.power, 0);
 
     await this.sendEventPing(
-      `Raid started: ${lobby.code}\nBoss: ${lobby.bossKey}\nDifficulty: ${difficulty.label}\n` +
+      `Raid started: ${lobby.code}\nBoss: ${bossLabel}\nDifficulty: ${difficulty.label}\n` +
         `Party (${members.length}): ${members.map((member) => member.username).join(', ')}\n` +
         `Mutator: ${generated.mutator}`,
       'Raid'
@@ -2412,8 +2543,12 @@ export class MolgianService {
           wipeText = ` | wipe penalty paid ${wipeCharge.charged}`;
         }
       }
+      const materialDropText = (Object.entries(materialDrops) as Array<[MaterialKey, number | undefined]>)
+        .filter(([, amount]) => Boolean(amount && amount > 0))
+        .map(([key, amount]) => `${materialLabels[key]} ${amount}`)
+        .join(', ');
       rewardLines.push(
-        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}${raidPetBonusText}${wipeText}`
+        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${materialDropText || 'none'}${raidPetBonusText}${wipeText}`
       );
     }
 
@@ -2426,7 +2561,7 @@ export class MolgianService {
     await this.sendEventPing(
       [
         victory
-          ? `Raid clear: ${lobby.bossKey} on ${difficulty.label}.`
+          ? `Raid clear: ${bossLabel} on ${difficulty.label}.`
           : `Raid failed at ${failedEncounter ?? 'an encounter'} (${clearedStages}/${stages.length} cleared).`,
         `Entry fee: ${entryFee} each (Treasury +${entryTreasuryAdded}, Burned ${entryBurned})`,
         `${victory ? 'Wipe penalty: none' : `Wipe penalty: ${wipePenalty} each (Treasury +${wipeTreasuryAdded}, Burned ${wipeBurned})`}`,

@@ -190,8 +190,8 @@ Eggs/pets:
 - `/shards`
 - `/forge materials`
 - `/forge recipes`
-- `/forge preview recipe_id:<id>`
-- `/forge craft recipe_id:<id>`
+- `/forge preview recipe_id:<id|short_key>`
+- `/forge craft recipe_id:<id|short_key>`
 - `/forge salvage gear_id:<id>`
 - `/forge mythic_egg`
 - `/missions view`
@@ -208,6 +208,11 @@ Admin:
 - `/admin set-treasury amount:<n>`
 - `/admin post-citizens-panel` (posts/refreshes the Citizens role button in `#Immigration-Center`)
 - `/purge amount:<1-100>` (deletes both recent and old messages; pinned messages are skipped)
+
+Forge short key examples:
+- `enforcer:weapon`
+- `shadow:chest`
+- `engineer:relic`
 
 ## 5. Daily Rules Implemented
 - Daily reset: `06:00 Europe/Oslo`
