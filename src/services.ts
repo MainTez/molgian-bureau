@@ -736,6 +736,18 @@ export class MolgianService {
     return this.guild.channels.create({ name: 'mythic-hall-of-fame', type: ChannelType.GuildText });
   }
 
+  private ensureEggInventoryRow(userId: number, tx: any = db): typeof eggsInventory.$inferSelect {
+    const existing = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, userId)).get();
+    if (existing) return existing;
+    tx.insert(eggsInventory)
+      .values({ userId, eggs: 0, mythicEggs: 0, lastWinAt: null })
+      .onConflictDoNothing({ target: eggsInventory.userId })
+      .run();
+    const created = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, userId)).get();
+    if (!created) throw new Error('Egg inventory missing.');
+    return created;
+  }
+
   private async ensureUser(discordId: string, username: string): Promise<typeof users.$inferSelect> {
     const existing = db.select().from(users).where(eq(users.discordId, discordId)).get();
     if (existing) {
@@ -753,10 +765,7 @@ export class MolgianService {
       if (!wallet) {
         db.insert(balances).values({ userId: existing.id, amount: 0 }).run();
       }
-      const eggs = db.select().from(eggsInventory).where(eq(eggsInventory.userId, existing.id)).get();
-      if (!eggs) {
-        db.insert(eggsInventory).values({ userId: existing.id, eggs: 0, mythicEggs: 0, lastWinAt: null }).run();
-      }
+      this.ensureEggInventoryRow(existing.id);
       const shardRow = db.select().from(shards).where(eq(shards.userId, existing.id)).get();
       if (!shardRow) {
         db.insert(shards).values({ userId: existing.id, amount: 0 }).run();
@@ -2364,14 +2373,12 @@ export class MolgianService {
             .run();
         }
         if (eggDrop > 0) {
-          const eggRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, member.userId)).get();
-          if (eggRow) {
-            tx
-              .update(eggsInventory)
-              .set({ eggs: eggRow.eggs + 1 })
-              .where(eq(eggsInventory.userId, member.userId))
-              .run();
-          }
+          const eggRow = this.ensureEggInventoryRow(member.userId, tx);
+          tx
+            .update(eggsInventory)
+            .set({ eggs: eggRow.eggs + 1 })
+            .where(eq(eggsInventory.userId, member.userId))
+            .run();
         }
       });
 
@@ -3968,8 +3975,7 @@ export class MolgianService {
   private async awardEggWinner(discordId: string, username: string, runId: number): Promise<void> {
     const user = await this.ensureUser(discordId, username);
     db.transaction((tx) => {
-      const eggRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-      if (!eggRow) throw new Error('Egg row missing');
+      const eggRow = this.ensureEggInventoryRow(user.id, tx);
       tx.update(eggsInventory)
         .set({ eggs: eggRow.eggs + 1, lastWinAt: nowMs() })
         .where(eq(eggsInventory.userId, user.id))
@@ -4345,8 +4351,7 @@ export class MolgianService {
     eggType: 'normal' | 'mythic'
   ): Promise<{ ok: boolean; suspense: string[]; final: string }> {
     const user = await this.ensureUser(discordId, username);
-    const inventory = db.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-    if (!inventory) return { ok: false, suspense: [], final: 'Egg inventory missing.' };
+    const inventory = this.ensureEggInventoryRow(user.id);
     if (eggType === 'normal' && inventory.eggs <= 0) return { ok: false, suspense: [], final: 'No normal eggs available.' };
     if (eggType === 'mythic' && inventory.mythicEggs <= 0) return { ok: false, suspense: [], final: 'No mythic eggs available.' };
 
@@ -4358,7 +4363,7 @@ export class MolgianService {
     let petInstanceId = 0;
     db.transaction((tx) => {
       const userLatest = tx.select().from(users).where(eq(users.id, user.id)).get();
-      const eggs = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
+      const eggs = this.ensureEggInventoryRow(user.id, tx);
       if (!userLatest || !eggs) throw new Error('User or eggs missing');
       if (eggType === 'normal' && eggs.eggs <= 0) throw new Error('No normal eggs left');
       if (eggType === 'mythic' && eggs.mythicEggs <= 0) throw new Error('No mythic eggs left');
@@ -4623,8 +4628,7 @@ export class MolgianService {
     const costTenths = FORGE_MYTHIC_EGG_COST * 10;
     try {
       db.transaction((tx) => {
-        const eggsRow = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-        if (!eggsRow) throw new Error('Missing shard/egg rows');
+        const eggsRow = this.ensureEggInventoryRow(user.id, tx);
         if (this.getShardTenths(user.id) < costTenths) throw new Error(`Need ${FORGE_MYTHIC_EGG_COST} shards.`);
         tx.update(eggsInventory).set({ mythicEggs: eggsRow.mythicEggs + 1 }).where(eq(eggsInventory.userId, user.id)).run();
       });
@@ -4659,7 +4663,7 @@ export class MolgianService {
   }> {
     const user = await this.ensureUser(discordId, username);
     const wallet = db.select().from(balances).where(eq(balances.userId, user.id)).get();
-    const eggs = db.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
+    const eggs = this.ensureEggInventoryRow(user.id);
     const raidSummary = this.computeRaidPower(user.id);
     const active = await this.getActivePet(user.id);
     const streak = this.getEffectiveWorkStreak(user.id);
@@ -4860,8 +4864,7 @@ export class MolgianService {
   public async adminGiveEgg(discordId: string, amount: number): Promise<{ ok: boolean; message: string }> {
     const user = await this.getUser(discordId);
     db.transaction((tx) => {
-      const eggs = tx.select().from(eggsInventory).where(eq(eggsInventory.userId, user.id)).get();
-      if (!eggs) throw new Error('Egg inventory missing');
+      const eggs = this.ensureEggInventoryRow(user.id, tx);
       tx.update(eggsInventory).set({ eggs: eggs.eggs + amount }).where(eq(eggsInventory.userId, user.id)).run();
     });
     return { ok: true, message: `Granted ${amount} eggs to ${user.username}.` };
