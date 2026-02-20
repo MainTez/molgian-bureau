@@ -63,19 +63,24 @@ import {
   MATERIAL_SHOP_PRICES,
   RAID_BOSSES,
   RAID_COOLDOWN_MS,
+  RAID_DEBT_MIN_BALANCE,
   RAID_DIFFICULTIES,
+  RAID_ENTRY_FEES,
   RAID_LOBBY_WINDOW_MS,
   RAID_MAX_PARTY_SIZE,
   RAID_MIN_PARTY_SIZE,
   SHOP_MATERIAL_KEYS,
   STARTER_CLASS_COST,
   baseClassByKey,
+  clampRaidChargeWithDebtFloor,
   emptyStats,
   formatStats,
   generateRaidEncounters,
   rarityMultiplier,
+  raidWipePenalty,
   rollStatsFromRanges,
   runClassQuiz,
+  splitRaidSink,
   t2PathByKey,
   type BaseClassKey,
   type ClassQuizGoal,
@@ -799,7 +804,7 @@ export class MolgianService {
       const wallet = tx.select().from(balances).where(eq(balances.userId, userId)).get();
       if (!wallet) throw new Error('Missing wallet');
       const next = wallet.amount + delta;
-      if (next < 0) throw new Error('Insufficient Molgium');
+      if (delta < 0 && next < 0) throw new Error('Insufficient Molgium');
       tx.update(balances).set({ amount: next }).where(eq(balances.userId, userId)).run();
       return next;
     });
@@ -807,6 +812,76 @@ export class MolgianService {
 
   private currentBalance(userId: number): number {
     return db.select().from(balances).where(eq(balances.userId, userId)).get()?.amount ?? 0;
+  }
+
+  private debtLockMessage(balance: number, action: string): string {
+    return (
+      `Debt lock active (${balance} Molgium). ` +
+      `Use /work and /fish sell to recover before ${action}.`
+    );
+  }
+
+  private debtGuard(userId: number, action: string): { ok: true } | { ok: false; message: string } {
+    const balance = this.currentBalance(userId);
+    if (balance >= 0) return { ok: true };
+    return { ok: false, message: this.debtLockMessage(balance, action) };
+  }
+
+  private applyRaidCharge(
+    userId: number,
+    requestedAmount: number,
+    allowDebt: boolean
+  ): {
+    charged: number;
+    newBalance: number;
+    treasuryAdded: number;
+    burned: number;
+    capped: boolean;
+  } {
+    const safeRequested = Math.max(0, Math.floor(requestedAmount));
+    return db.transaction((tx) => {
+      const wallet = tx.select().from(balances).where(eq(balances.userId, userId)).get();
+      if (!wallet) throw new Error('Wallet missing.');
+
+      if (!allowDebt && wallet.amount < safeRequested) {
+        throw new Error('Insufficient Molgium');
+      }
+
+      const chargeResult = allowDebt
+        ? clampRaidChargeWithDebtFloor(wallet.amount, safeRequested, RAID_DEBT_MIN_BALANCE)
+        : {
+            charged: safeRequested,
+            newBalance: wallet.amount - safeRequested,
+            capped: false
+          };
+
+      if (chargeResult.charged > 0) {
+        tx
+          .update(balances)
+          .set({ amount: chargeResult.newBalance })
+          .where(eq(balances.userId, userId))
+          .run();
+      }
+
+      const sink = splitRaidSink(chargeResult.charged);
+      if (sink.treasury > 0) {
+        const treasuryRow = tx.select().from(treasury).where(eq(treasury.id, 1)).get();
+        if (!treasuryRow) throw new Error('Treasury missing');
+        tx
+          .update(treasury)
+          .set({ amount: treasuryRow.amount + sink.treasury, updatedAt: nowMs() })
+          .where(eq(treasury.id, 1))
+          .run();
+      }
+
+      return {
+        charged: chargeResult.charged,
+        newBalance: chargeResult.newBalance,
+        treasuryAdded: sink.treasury,
+        burned: sink.burned,
+        capped: chargeResult.capped
+      };
+    });
   }
 
   private parseTenths(value: string | null | undefined): number | null {
@@ -1558,6 +1633,8 @@ export class MolgianService {
     quantity: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'buying from shop');
+    if (!debtLock.ok) return debtLock;
     this.ensureMaterialRows(user.id);
     const qty = Math.max(1, Math.floor(quantity));
     if (qty > 999) return { ok: false, message: 'Quantity too high.' };
@@ -1794,6 +1871,8 @@ export class MolgianService {
     recipeId: string
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'crafting in forge');
+    if (!debtLock.ok) return debtLock;
     this.ensureMaterialRows(user.id);
     const classRow = this.ensureClassProgressRow(user.id);
     if (!classRow.baseClassKey) return { ok: false, message: 'Pick a class first with /class choose.' };
@@ -1985,6 +2064,8 @@ export class MolgianService {
     channelId: string
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'starting raids');
+    if (!debtLock.ok) return debtLock;
     const classRow = this.ensureClassProgressRow(user.id);
     if (!classRow.baseClassKey) {
       return { ok: false, message: 'Pick your starter class first with /class choose.' };
@@ -1996,6 +2077,8 @@ export class MolgianService {
       return { ok: false, message: `Raid cooldown active: ${Math.ceil(cooldownMs / 60000)}m remaining.` };
     }
     if (this.activeLobbyForUser(user.id)) return { ok: false, message: 'You are already in an active lobby.' };
+    const entryFee = RAID_ENTRY_FEES[difficulty];
+    const wipePenalty = raidWipePenalty(difficulty);
 
     let code = this.randomLobbyCode();
     for (let i = 0; i < 10; i += 1) {
@@ -2027,6 +2110,9 @@ export class MolgianService {
       message:
         `Raid lobby created: ${code}\n` +
         `Boss: ${bossKey}\nDifficulty: ${difficulty}\n` +
+        `Entry fee: ${entryFee} each\n` +
+        `Wipe penalty: ${wipePenalty} each\n` +
+        `Raid sink split: 50% Treasury / 50% burn\n` +
         `Lobby expires in 2 minutes.\nUse /raid join code:${code}`
     };
   }
@@ -2037,6 +2123,8 @@ export class MolgianService {
     codeRaw: string
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'joining raids');
+    if (!debtLock.ok) return debtLock;
     const cooldownMs = this.raidCooldownRemainingMs(user.id);
     if (cooldownMs > 0) {
       return { ok: false, message: `Raid cooldown active: ${Math.ceil(cooldownMs / 60000)}m remaining.` };
@@ -2111,6 +2199,8 @@ export class MolgianService {
 
   public async raidStart(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'starting raids');
+    if (!debtLock.ok) return debtLock;
     const lobby = this.activeLobbyForUser(user.id);
     if (!lobby) return { ok: false, message: 'No active lobby found.' };
     if (lobby.status !== 'open') return { ok: false, message: 'Lobby is not startable.' };
@@ -2119,6 +2209,40 @@ export class MolgianService {
     const members = this.raidMemberUsernames(lobby.id);
     if (members.length < RAID_MIN_PARTY_SIZE) {
       return { ok: false, message: `Need at least ${RAID_MIN_PARTY_SIZE} players to start.` };
+    }
+
+    const entryFee = RAID_ENTRY_FEES[lobby.difficulty as RaidDifficultyKey];
+    const wipePenalty = raidWipePenalty(lobby.difficulty as RaidDifficultyKey);
+    const cannotAffordEntry = members
+      .map((member) => ({
+        username: member.username,
+        balance: this.currentBalance(member.userId)
+      }))
+      .filter((entry) => entry.balance < entryFee);
+    if (cannotAffordEntry.length > 0) {
+      return {
+        ok: false,
+        message:
+          `Raid start blocked. Entry fee is ${entryFee} Molgium per player.\n` +
+          `Missing funds: ${cannotAffordEntry
+            .map((entry) => `${entry.username} (${entry.balance})`)
+            .join(', ')}`
+      };
+    }
+
+    let entryTreasuryAdded = 0;
+    let entryBurned = 0;
+    for (const member of members) {
+      try {
+        const entryCharge = this.applyRaidCharge(member.userId, entryFee, false);
+        entryTreasuryAdded += entryCharge.treasuryAdded;
+        entryBurned += entryCharge.burned;
+      } catch (error) {
+        return {
+          ok: false,
+          message: `Raid start blocked: failed charging entry fee for ${member.username}. ${error instanceof Error ? error.message : ''}`.trim()
+        };
+      }
     }
 
     db.update(raidLobbies).set({ status: 'running', startedAt: nowMs() }).where(eq(raidLobbies.id, lobby.id)).run();
@@ -2192,6 +2316,8 @@ export class MolgianService {
     this.setState(this.raidRecentEncountersKey(), JSON.stringify(recentKeys));
 
     const rewardLines: string[] = [];
+    let wipeTreasuryAdded = 0;
+    let wipeBurned = 0;
     for (const member of memberPower) {
       this.ensureMaterialRows(member.userId);
       const activePet = await this.getActivePet(member.userId);
@@ -2266,8 +2392,21 @@ export class MolgianService {
         activePet?.petType === 'Raid'
           ? ` | raid pet bonus: +${formatPercent(raidLootBonusChance * 100)} loot chance${victory ? `, +${formatPercent(raidMolgiumWinBonusRate * 100)} Molgium on win` : ''}`
           : '';
+      let wipeText = '';
+      if (!victory) {
+        const wipeCharge = this.applyRaidCharge(member.userId, wipePenalty, true);
+        wipeTreasuryAdded += wipeCharge.treasuryAdded;
+        wipeBurned += wipeCharge.burned;
+        if (wipeCharge.charged <= 0) {
+          wipeText = ` | wipe penalty ${wipePenalty}, paid 0 (debt floor ${RAID_DEBT_MIN_BALANCE})`;
+        } else if (wipeCharge.capped) {
+          wipeText = ` | wipe penalty ${wipePenalty}, paid ${wipeCharge.charged} (capped at debt floor ${RAID_DEBT_MIN_BALANCE})`;
+        } else {
+          wipeText = ` | wipe penalty paid ${wipeCharge.charged}`;
+        }
+      }
       rewardLines.push(
-        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}${raidPetBonusText}`
+        `${member.username}: +${payout} Molgium${eggDrop ? ' +1 egg' : ''} | materials ${JSON.stringify(materialDrops)}${raidPetBonusText}${wipeText}`
       );
     }
 
@@ -2282,6 +2421,9 @@ export class MolgianService {
         victory
           ? `Raid clear: ${lobby.bossKey} on ${difficulty.label}.`
           : `Raid failed at ${failedEncounter ?? 'an encounter'} (${clearedStages}/${stages.length} cleared).`,
+        `Entry fee: ${entryFee} each (Treasury +${entryTreasuryAdded}, Burned ${entryBurned})`,
+        `${victory ? 'Wipe penalty: none' : `Wipe penalty: ${wipePenalty} each (Treasury +${wipeTreasuryAdded}, Burned ${wipeBurned})`}`,
+        `Raid debt floor: ${RAID_DEBT_MIN_BALANCE}`,
         'Rewards:',
         ...rewardLines
       ].join('\n'),
@@ -2399,6 +2541,8 @@ export class MolgianService {
     jobId: number
   ): Promise<{ ok: boolean; message: string; hired?: boolean }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'applying for jobs');
+    if (!debtLock.ok) return debtLock;
     const tier = RAISE_TIERS.find((entry) => entry.id === jobId);
     if (!tier) return { ok: false, message: 'Invalid job id.' };
     const owned = db.select().from(raisesOwned).where(eq(raisesOwned.userId, user.id)).all();
@@ -3197,6 +3341,8 @@ export class MolgianService {
     amount: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'gambling');
+    if (!debtLock.ok) return debtLock;
     if (amount < 50) return { ok: false, message: 'Minimum gamble amount is 50 Molgium.' };
     let postBetBalance = 0;
     try {
@@ -3235,6 +3381,8 @@ export class MolgianService {
     amount: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'gambling');
+    if (!debtLock.ok) return debtLock;
     if (amount < 50) return { ok: false, message: 'Minimum gamble amount is 50 Molgium.' };
     let postBetBalance = 0;
     try {
@@ -3300,6 +3448,8 @@ export class MolgianService {
     amount: number
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'entering jackpot');
+    if (!debtLock.ok) return debtLock;
     if (amount <= 0) return { ok: false, message: 'Amount must be positive.' };
     const roundResult = this.ensureJackpotRound();
     if (!roundResult.ok) return roundResult;
@@ -3538,6 +3688,9 @@ export class MolgianService {
       '  - Added four difficulties: Normal, Hard, Nightmare, Infernal.',
       '  - Added guaranteed Molgium payout on clear plus material and egg drop chances.',
       '  - Added Raid pets: higher raid loot chance and extra Molgium on raid wins.',
+      '  - Raid starts now charge entry fees; failures apply extra wipe penalty.',
+      '  - Raid penalties can create debt (floor -10000), with soft lock on risky commands.',
+      '  - Raid fee sink split: 50% Treasury, 50% burned.',
       '',
       '- Economy:',
       '  - Base salary is now 150 Molgium.',
@@ -4465,6 +4618,8 @@ export class MolgianService {
 
   public async forgeMythicEgg(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
+    const debtLock = this.debtGuard(user.id, 'forging mythic eggs');
+    if (!debtLock.ok) return debtLock;
     const costTenths = FORGE_MYTHIC_EGG_COST * 10;
     try {
       db.transaction((tx) => {

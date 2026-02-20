@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   BOSS_GEAR_RECIPES,
   BASE_CLASS_DEFINITIONS,
+  RAID_DEBT_MIN_BALANCE,
+  RAID_ENTRY_FEES,
   MATERIAL_SHOP_PRICES,
+  clampRaidChargeWithDebtFloor,
   generateRaidEncounters,
+  raidWipePenalty,
+  splitRaidSink,
   rollStatsFromRanges,
   runClassQuiz
 } from '../src/domain/endgame.js';
@@ -50,5 +55,30 @@ describe('endgame domain', () => {
     const recipePowerRange = recipe!.statRanges.find((range) => range.key === 'power');
     expect(recipePowerRange).toBeDefined();
     expect(recipePowerRange!.max).not.toBe(firstPathMax);
+  });
+
+  it('uses expected raid entry fees and wipe penalties', () => {
+    expect(RAID_ENTRY_FEES.normal).toBe(500);
+    expect(RAID_ENTRY_FEES.hard).toBe(1200);
+    expect(RAID_ENTRY_FEES.nightmare).toBe(2500);
+    expect(RAID_ENTRY_FEES.infernal).toBe(4500);
+    expect(raidWipePenalty('normal')).toBe(250);
+    expect(raidWipePenalty('infernal')).toBe(2250);
+  });
+
+  it('splits raid sink into treasury + burned halves', () => {
+    expect(splitRaidSink(1000)).toEqual({ treasury: 500, burned: 500 });
+    expect(splitRaidSink(501)).toEqual({ treasury: 250, burned: 251 });
+  });
+
+  it('clamps raid debt charges to configured debt floor', () => {
+    const within = clampRaidChargeWithDebtFloor(100, 200);
+    expect(within).toEqual({ charged: 200, newBalance: -100, capped: false });
+
+    const capped = clampRaidChargeWithDebtFloor(-9900, 500);
+    expect(capped).toEqual({ charged: 100, newBalance: RAID_DEBT_MIN_BALANCE, capped: true });
+
+    const none = clampRaidChargeWithDebtFloor(RAID_DEBT_MIN_BALANCE, 50);
+    expect(none).toEqual({ charged: 0, newBalance: RAID_DEBT_MIN_BALANCE, capped: true });
   });
 });

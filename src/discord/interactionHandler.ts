@@ -618,6 +618,10 @@ export const handleInteraction = async (
   if (interaction.commandName === 'profile') {
     const targetUser = interaction.options.getUser('user') ?? interaction.user;
     const profile = await services.game.profile(targetUser.id, targetUser.username);
+    const debtStatus =
+      profile.balance < 0
+        ? `IN DEBT (${profile.balance}) - raid/gamble/shop/forge/job locked until repaid`
+        : 'CLEAR';
     const passiveLines =
       profile.activePetBonuses.length > 0
         ? profile.activePetBonuses.map((line) => `- ${line}`).join('\n')
@@ -627,6 +631,7 @@ export const handleInteraction = async (
       [
         `Profile: ${targetUser.username}`,
         `Balance: ${profile.balance}`,
+        `Debt status: ${debtStatus}`,
         `SalaryBase: ${profile.salaryBase}`,
         `Work cooldown: ${profile.workReady ? 'Ready' : 'Not ready'}`,
         `Work streak: ${profile.workStreak} (+${profile.workStreakBonusPct.toFixed(1)}% /work payout)`,

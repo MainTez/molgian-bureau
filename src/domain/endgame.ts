@@ -100,6 +100,15 @@ export const RAID_LOBBY_WINDOW_MS = 2 * 60 * 1000;
 export const RAID_COOLDOWN_MS = 30 * 60 * 1000;
 export const RAID_MIN_PARTY_SIZE = 2;
 export const RAID_MAX_PARTY_SIZE = 6;
+export const RAID_DEBT_MIN_BALANCE = -10_000;
+export const RAID_WIPE_PENALTY_RATE = 0.5;
+export const RAID_TREASURY_SHARE_RATE = 0.5;
+export const RAID_ENTRY_FEES: Record<RaidDifficultyKey, number> = {
+  normal: 500,
+  hard: 1_200,
+  nightmare: 2_500,
+  infernal: 4_500
+};
 
 const makeWeights = (stats: Partial<StatLine>): StatLine => ({
   ...zeroStats,
@@ -723,4 +732,31 @@ export const rarityMultiplier = (rarity: GearRarity): number => {
   if (rarity === 'Legendary') return 1.72;
   if (rarity === 'Mythic') return 2.08;
   return 2.65;
+};
+
+export const raidWipePenalty = (difficulty: RaidDifficultyKey): number =>
+  Math.floor(RAID_ENTRY_FEES[difficulty] * RAID_WIPE_PENALTY_RATE);
+
+export const splitRaidSink = (chargedAmount: number): { treasury: number; burned: number } => {
+  const safeAmount = Math.max(0, Math.floor(chargedAmount));
+  const treasury = Math.floor(safeAmount * RAID_TREASURY_SHARE_RATE);
+  return {
+    treasury,
+    burned: safeAmount - treasury
+  };
+};
+
+export const clampRaidChargeWithDebtFloor = (
+  currentBalance: number,
+  requestedCharge: number,
+  debtFloor = RAID_DEBT_MIN_BALANCE
+): { charged: number; newBalance: number; capped: boolean } => {
+  const safeRequested = Math.max(0, Math.floor(requestedCharge));
+  const maxCharge = Math.max(0, currentBalance - debtFloor);
+  const charged = Math.min(safeRequested, maxCharge);
+  return {
+    charged,
+    newBalance: currentBalance - charged,
+    capped: charged < safeRequested
+  };
 };
