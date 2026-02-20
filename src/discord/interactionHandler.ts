@@ -60,6 +60,11 @@ const formatShardValue = (amount: number): string =>
   Number.isInteger(amount) ? `${amount}` : amount.toFixed(1);
 
 const COINFLIP_ANIMATION_FRAMES = ['Coin tossed...', 'Coin spinning...', 'Coin landing...'];
+const JOB_INTERVIEW_ANIMATION_FRAMES = [
+  'Submitting application...',
+  'Going through interview...',
+  'Waiting for hiring decision...'
+];
 const ANIMATION_STEP_MS = 450;
 const PURGE_OLD_DELETE_DELAY_MS = 150;
 
@@ -96,10 +101,22 @@ export const handleInteraction = async (
       return;
     }
     const jobId = interaction.options.getInteger('id', true);
+    await interaction.deferReply();
     const result = await services.game.jobApply(discordId, username, jobId);
-    await replyWithEmbed(interaction, result.message, {
-      tone: result.ok ? 'success' : 'warning',
-      title: 'Job Application'
+    if (!result.ok) {
+      await editReplyWithEmbed(interaction, result.message, {
+        tone: 'warning',
+        title: 'Job Application'
+      });
+      return;
+    }
+    for (const frame of JOB_INTERVIEW_ANIMATION_FRAMES) {
+      await editReplyWithEmbed(interaction, frame, { tone: 'event', title: 'Job Interview' });
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_STEP_MS));
+    }
+    await editReplyWithEmbed(interaction, result.message, {
+      tone: result.hired ? 'success' : 'warning',
+      title: result.hired ? 'Interview Passed' : 'Interview Rejected'
     });
     return;
   }

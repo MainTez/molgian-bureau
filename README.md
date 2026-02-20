@@ -129,6 +129,7 @@ Core:
 - `/job apply id:<1|2|3>`
 - Job costs: `10000`, `20000`, `50000`
 - Job salary bases: `500`, `1000`, `2000`
+- Job apply is an interview roll: `50/50` pass/fail, and the application fee is spent either way
 - Base salary: `150 Molgium`
 - `/profile`
 - `/profile user:@user` (optional target)

@@ -1161,7 +1161,7 @@ export class MolgianService {
     discordId: string,
     username: string,
     jobId: number
-  ): Promise<{ ok: boolean; message: string }> {
+  ): Promise<{ ok: boolean; message: string; hired?: boolean }> {
     const user = await this.ensureUser(discordId, username);
     const tier = RAISE_TIERS.find((entry) => entry.id === jobId);
     if (!tier) return { ok: false, message: 'Invalid job id.' };
@@ -1169,19 +1169,39 @@ export class MolgianService {
     if (owned.some((entry) => entry.raiseId === jobId)) return { ok: false, message: 'Job already acquired.' };
     const maxOwned = owned.reduce((max, current) => Math.max(max, current.raiseId), 0);
     if (jobId > maxOwned + 1) return { ok: false, message: 'Apply for jobs in order.' };
+    const hired = Math.random() < 0.5;
+    let newBalance = 0;
     try {
       db.transaction((tx) => {
         const wallet = tx.select().from(balances).where(eq(balances.userId, user.id)).get();
         if (!wallet) throw new Error('Wallet missing');
         if (wallet.amount < tier.cost) throw new Error('Insufficient Molgium');
-        tx.update(balances).set({ amount: wallet.amount - tier.cost }).where(eq(balances.userId, user.id)).run();
-        tx.insert(raisesOwned).values({ userId: user.id, raiseId: jobId, purchasedAt: nowMs() }).run();
-        tx.update(users).set({ salaryBase: tier.newSalaryBase, updatedAt: nowMs() }).where(eq(users.id, user.id)).run();
+        newBalance = wallet.amount - tier.cost;
+        tx.update(balances).set({ amount: newBalance }).where(eq(balances.userId, user.id)).run();
+        if (hired) {
+          tx.insert(raisesOwned).values({ userId: user.id, raiseId: jobId, purchasedAt: nowMs() }).run();
+          tx.update(users).set({ salaryBase: tier.newSalaryBase, updatedAt: nowMs() }).where(eq(users.id, user.id)).run();
+        }
       });
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Job application failed.' };
     }
-    return { ok: true, message: `Job ${jobId} acquired. SalaryBase now ${tier.newSalaryBase}.` };
+    if (!hired) {
+      return {
+        ok: true,
+        hired: false,
+        message:
+          `Interview failed for job ${jobId}. Application fee ${tier.cost} Molgium was spent. ` +
+          `New balance: ${newBalance} Molgium.`
+      };
+    }
+    return {
+      ok: true,
+      hired: true,
+      message:
+        `Interview passed for job ${jobId}. SalaryBase now ${tier.newSalaryBase}. ` +
+        `New balance: ${newBalance} Molgium.`
+    };
   }
 
   private findShopItem(itemId: string): ShopItem | null {
@@ -1470,8 +1490,12 @@ export class MolgianService {
     const cooldownKey = `fish:last:${user.id}`;
     const lastCast = this.getStateNumber(cooldownKey);
     if (lastCast && nowMs() - lastCast < FISH_COOLDOWN_MS) {
-      const remaining = Math.ceil((FISH_COOLDOWN_MS - (nowMs() - lastCast)) / 1000);
-      return { ok: false, message: `Fishing cooldown active: ${remaining}s remaining.` };
+      const readyAtMs = lastCast + FISH_COOLDOWN_MS;
+      const readyAtUnix = Math.floor(readyAtMs / 1000);
+      return {
+        ok: false,
+        message: `Fishing cooldown active. Try again <t:${readyAtUnix}:R> (at <t:${readyAtUnix}:t>).`
+      };
     }
     const rodTier = rod.tier as RodTier;
     const rodConfig = ROD_CONFIG[rodTier];
