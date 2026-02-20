@@ -146,8 +146,8 @@ Shop/loadout:
 
 Rods/fishing:
 - `/rod shop`
-- `/rod buy tier:<starter|improved|elite>`
-- `/rod equip tier:<starter|improved|elite>`
+- `/rod buy tier:<starter|improved|elite|god>`
+- `/rod equip tier:<starter|improved|elite|god>`
 - `/fish cast`
 - `/fish sell catch_id:<id|last|all>`
 - `/fish collection`

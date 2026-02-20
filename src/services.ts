@@ -24,7 +24,6 @@ import {
   EVENT_GLOBAL_COOLDOWN_MS,
   FISH_RARITY_BASE_WEIGHTS,
   FISH_BASE_VALUES,
-  FISH_COOLDOWN_MS,
   FISH_SEASONS,
   FORGE_MYTHIC_EGG_COST,
   HATCH_RATES_MYTHIC_EGG,
@@ -274,7 +273,8 @@ const fishRarityRank: Record<FishRarity, number> = {
 const rodTierRank: Record<RodTier, number> = {
   starter: 1,
   improved: 2,
-  elite: 3
+  elite: 3,
+  god: 4
 };
 
 const formatPercent = (value: number): string => {
@@ -285,6 +285,11 @@ const formatPercent = (value: number): string => {
 const formatSignedPercent = (value: number): string => {
   const sign = value >= 0 ? '+' : '-';
   return `${sign}${formatPercent(Math.abs(value))}`;
+};
+
+const formatSignedMinutes = (value: number): string => {
+  const sign = value >= 0 ? '+' : '-';
+  return `${sign}${Math.abs(value)}m`;
 };
 
 const knownFishByKey = new Map<string, { displayName: string; rarity: FishRarity }>();
@@ -1361,7 +1366,8 @@ export class MolgianService {
     const sellBonus = Math.max(0, (config.sellBonusMultiplier - 1) * 100);
     const doubleSellChance = config.doubleSellChance * 100;
     const rarityBumpChance = config.rarityBumpChance * 100;
-    return `trash -${formatPercent(trashReduction)}, sell +${formatPercent(sellBonus)}, double +${formatPercent(doubleSellChance)}, rarity bump +${formatPercent(rarityBumpChance)}`;
+    const cooldownMinutes = Math.round(config.cooldownMs / 60_000);
+    return `cooldown ${cooldownMinutes}m, trash -${formatPercent(trashReduction)}, sell +${formatPercent(sellBonus)}, double +${formatPercent(doubleSellChance)}, rarity bump +${formatPercent(rarityBumpChance)}`;
   }
 
   private rodUpgradeSummary(targetTier: RodTier, comparedToTier: RodTier | null): string {
@@ -1374,9 +1380,10 @@ export class MolgianService {
     const sellDelta = (target.sellBonusMultiplier - current.sellBonusMultiplier) * 100;
     const doubleDelta = (target.doubleSellChance - current.doubleSellChance) * 100;
     const rarityDelta = (target.rarityBumpChance - current.rarityBumpChance) * 100;
+    const cooldownDeltaMinutes = Math.round((target.cooldownMs - current.cooldownMs) / 60_000);
     return [
       `Compared to ${current.name}:`,
-      `trash ${formatSignedPercent(trashDelta)}, sell ${formatSignedPercent(sellDelta)}, double ${formatSignedPercent(doubleDelta)}, rarity bump ${formatSignedPercent(rarityDelta)}.`
+      `cooldown ${formatSignedMinutes(cooldownDeltaMinutes)}, trash ${formatSignedPercent(trashDelta)}, sell ${formatSignedPercent(sellDelta)}, double ${formatSignedPercent(doubleDelta)}, rarity bump ${formatSignedPercent(rarityDelta)}.`
     ].join(' ');
   }
 
@@ -1487,18 +1494,19 @@ export class MolgianService {
       .where(and(eq(rodsOwned.userId, user.id), eq(rodsOwned.equipped, 1)))
       .get();
     if (!rod) return { ok: false, message: 'No equipped rod. Buy and equip one with /rod.' };
+    const rodTier = rod.tier as RodTier;
+    const rodConfig = ROD_CONFIG[rodTier];
+    const rodCooldownMs = rodConfig.cooldownMs;
     const cooldownKey = `fish:last:${user.id}`;
     const lastCast = this.getStateNumber(cooldownKey);
-    if (lastCast && nowMs() - lastCast < FISH_COOLDOWN_MS) {
-      const readyAtMs = lastCast + FISH_COOLDOWN_MS;
+    if (lastCast && nowMs() - lastCast < rodCooldownMs) {
+      const readyAtMs = lastCast + rodCooldownMs;
       const readyAtUnix = Math.floor(readyAtMs / 1000);
       return {
         ok: false,
         message: `Fishing cooldown active. Try again <t:${readyAtUnix}:R> (at <t:${readyAtUnix}:t>).`
       };
     }
-    const rodTier = rod.tier as RodTier;
-    const rodConfig = ROD_CONFIG[rodTier];
     let rarity = rollFishRarity(rodTier, this.isBoostActive('event:fishing_madness_until'));
     let upgradedToGodByRod = false;
     if (Math.random() < rodConfig.rarityBumpChance) {
@@ -2431,6 +2439,8 @@ export class MolgianService {
       '',
       '- Fishing and Hall of Fame:',
       '  - Added God fish tier from rod-only Mythic bump.',
+      '  - Rod cooldowns: Starter 15m, Improved 10m, Elite 5m, GOD Rod 2m.',
+      '  - Added GOD Rod (150000 Molgium) with top-tier fishing bonuses.',
       '  - Hall of Fame now tracks Mythic pet hatches + Mythic/God fish catches.',
       '',
       '- Events and Treasury:',

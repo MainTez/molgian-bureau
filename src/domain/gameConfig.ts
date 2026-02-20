@@ -21,6 +21,7 @@ export const ROD_CONFIG: Record<
   {
     name: string;
     cost: number;
+    cooldownMs: number;
     trashWeightMultiplier: number;
     sellBonusMultiplier: number;
     doubleSellChance: number;
@@ -30,6 +31,7 @@ export const ROD_CONFIG: Record<
   starter: {
     name: 'Starter Rod',
     cost: 300,
+    cooldownMs: 15 * 60 * 1000,
     trashWeightMultiplier: 1,
     sellBonusMultiplier: 1,
     doubleSellChance: 0,
@@ -38,6 +40,7 @@ export const ROD_CONFIG: Record<
   improved: {
     name: 'Improved Rod',
     cost: 2000,
+    cooldownMs: 10 * 60 * 1000,
     trashWeightMultiplier: 0.8,
     sellBonusMultiplier: 1.08,
     doubleSellChance: 0,
@@ -46,10 +49,20 @@ export const ROD_CONFIG: Record<
   elite: {
     name: 'Elite Rod',
     cost: 7500,
+    cooldownMs: 5 * 60 * 1000,
     trashWeightMultiplier: 0.65,
     sellBonusMultiplier: 1.12,
     doubleSellChance: 0.06,
     rarityBumpChance: 0.07
+  },
+  god: {
+    name: 'GOD Rod',
+    cost: 150000,
+    cooldownMs: 2 * 60 * 1000,
+    trashWeightMultiplier: 0.35,
+    sellBonusMultiplier: 1.35,
+    doubleSellChance: 0.2,
+    rarityBumpChance: 0.2
   }
 };
 
@@ -101,7 +114,7 @@ export const FISH_SEASONS: Record<
 };
 
 export const SHOP_FIXED_RAISES = RAISE_TIERS;
-export const SHOP_FIXED_RODS: RodTier[] = ['starter', 'improved', 'elite'];
+export const SHOP_FIXED_RODS: RodTier[] = ['starter', 'improved', 'elite', 'god'];
 
 export const COSMETIC_POOL = {
   title: [
