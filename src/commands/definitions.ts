@@ -297,6 +297,7 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
     .setName('fish')
     .setDescription('Fish with your currently equipped rod.')
     .addSubcommand((sub) => sub.setName('cast').setDescription('Cast your line.'))
+    .addSubcommand((sub) => sub.setName('cooldown').setDescription('Check when you can cast again.'))
     .addSubcommand((sub) =>
       sub
         .setName('sell')

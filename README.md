@@ -161,6 +161,7 @@ Rods/fishing:
 - `/rod buy tier:<starter|improved|elite|god>`
 - `/rod equip tier:<starter|improved|elite|god>`
 - `/fish cast`
+- `/fish cooldown`
 - `/fish sell catch_id:<id|last|all>`
 - `/fish collection`
 - `/fish value`

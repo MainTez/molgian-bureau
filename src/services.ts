@@ -2835,14 +2835,51 @@ export class MolgianService {
     if (rarity === 'Mythic' || rarity === 'God') {
       await this.announceRareFish(user, inserted.id, fish.key, caughtName, rarity, value, upgradedToGodByRod);
     }
-    this.setState(cooldownKey, String(nowMs()));
+    const castedAt = nowMs();
+    this.setState(cooldownKey, String(castedAt));
     this.incrementMissionMetric(user.id, 'fish_cast', 1);
+    const nextReadyUnix = Math.floor((castedAt + rodCooldownMs) / 1000);
     return {
       ok: true,
       message:
         `Caught ${caughtName} [${rarity}]` +
         `${enchantment ? ` [Enchanted: ${enchantment.label}]` : ''}, ` +
-        `worth ${value} Molgium (id ${inserted.id})${doubled ? ' [double]' : ''}.`
+        `worth ${value} Molgium (id ${inserted.id})${doubled ? ' [double]' : ''}.\n` +
+        `Next cast: <t:${nextReadyUnix}:R> (at <t:${nextReadyUnix}:t>).`
+    };
+  }
+
+  public async fishCooldown(discordId: string, username: string): Promise<{ ok: boolean; message: string }> {
+    const user = await this.ensureUser(discordId, username);
+    const rod = db
+      .select()
+      .from(rodsOwned)
+      .where(and(eq(rodsOwned.userId, user.id), eq(rodsOwned.equipped, 1)))
+      .get();
+    if (!rod) return { ok: false, message: 'No equipped rod. Buy and equip one with /rod.' };
+
+    const rodTier = rod.tier as RodTier;
+    const rodConfig = ROD_CONFIG[rodTier];
+    const cooldownKey = `fish:last:${user.id}`;
+    const lastCast = this.getStateNumber(cooldownKey);
+    if (!lastCast) {
+      return {
+        ok: true,
+        message: `You can fish now with ${rodConfig.name}. Cooldown: ${Math.round(rodConfig.cooldownMs / 60_000)} minutes.`
+      };
+    }
+
+    const readyAtMs = lastCast + rodConfig.cooldownMs;
+    const readyAtUnix = Math.floor(readyAtMs / 1000);
+    if (nowMs() >= readyAtMs) {
+      return {
+        ok: true,
+        message: `You can fish now with ${rodConfig.name}. Cooldown: ${Math.round(rodConfig.cooldownMs / 60_000)} minutes.`
+      };
+    }
+    return {
+      ok: false,
+      message: `Next cast: <t:${readyAtUnix}:R> (at <t:${readyAtUnix}:t>) with ${rodConfig.name}.`
     };
   }
 

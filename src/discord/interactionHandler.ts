@@ -358,6 +358,14 @@ export const handleInteraction = async (
       });
       return;
     }
+    if (sub === 'cooldown') {
+      const result = await services.game.fishCooldown(discordId, username);
+      await replyWithEmbed(interaction, result.message, {
+        tone: result.ok ? 'success' : 'warning',
+        title: 'Fish Cooldown'
+      });
+      return;
+    }
     if (sub === 'sell') {
       const catchId = interaction.options.getString('catch_id', true);
       const result = await services.game.fishSell(discordId, username, catchId);
