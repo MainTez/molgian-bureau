@@ -496,6 +496,11 @@ export class MolgianService {
     this.guild = await client.guilds.fetch(GUILD_ID);
     await this.guild.channels.fetch();
     this.eventChannel = await this.ensureEventChannel(this.guild);
+    try {
+      await this.ensureCitizensRole(this.guild);
+    } catch (error) {
+      logger.warn('Failed to ensure Citizens role on startup', { error: String(error) });
+    }
     this.seedDefaults();
     this.backfillLegacyCatchNames();
     this.seedEggSpawn();
@@ -516,6 +521,28 @@ export class MolgianService {
 
   public noteUserActive(discordId: string): void {
     this.activeUsers.set(discordId, nowMs());
+  }
+
+  private currentCitizensRoleId(): string | null {
+    return this.citizensRoleId ?? this.getState('citizens:role_id');
+  }
+
+  private memberHasCitizensRole(member: GuildMember): boolean {
+    const roleId = this.currentCitizensRoleId();
+    if (!roleId) return false;
+    return member.roles.cache.has(roleId);
+  }
+
+  public async hasCitizensRole(discordId: string): Promise<boolean> {
+    if (!this.guild) return false;
+    if (!this.currentCitizensRoleId()) {
+      await this.ensureCitizensRole(this.guild).catch(() => null);
+    }
+    const member =
+      this.guild.members.cache.get(discordId) ??
+      (await this.guild.members.fetch(discordId).catch(() => null));
+    if (!member || member.user.bot) return false;
+    return this.memberHasCitizensRole(member);
   }
 
   public async claimCitizensRole(discordId: string): Promise<{ ok: boolean; message: string }> {
@@ -583,8 +610,8 @@ export class MolgianService {
     return `mission:progress:${missionId}:${userId}:${periodKey}`;
   }
 
-  private missionClaimedKey(userId: number, missionId: string, periodKey: string): string {
-    return `mission:claimed:${missionId}:${userId}:${periodKey}`;
+  private missionPeriodClaimedKey(userId: number, period: MissionPeriod, periodKey: string): string {
+    return `mission:claimed:${period}:${userId}:${periodKey}`;
   }
 
   private shardRemainderTenthsKey(userId: number): string {
@@ -1120,7 +1147,7 @@ export class MolgianService {
     const periodKey = this.missionPeriodKey(mission.period, timestampMs);
     const progressValue = this.getStateNumber(this.missionProgressKey(userId, mission.id, periodKey)) ?? 0;
     const progress = Math.max(0, Math.min(mission.target, Math.floor(progressValue)));
-    const claimed = this.getState(this.missionClaimedKey(userId, mission.id, periodKey)) === '1';
+    const claimed = this.getState(this.missionPeriodClaimedKey(userId, mission.period, periodKey)) === '1';
     return { progress, completed: progress >= mission.target, claimed, periodKey };
   }
 
@@ -1143,6 +1170,10 @@ export class MolgianService {
   public async missionsView(discordId: string, username: string): Promise<{
     dailyKey: string;
     weeklyKey: string;
+    dailyReady: boolean;
+    dailyClaimed: boolean;
+    weeklyReady: boolean;
+    weeklyClaimed: boolean;
     daily: Array<{
       id: string;
       label: string;
@@ -1181,6 +1212,10 @@ export class MolgianService {
     return {
       dailyKey,
       weeklyKey,
+      dailyReady: mapped.filter((entry) => entry.period === 'daily').every((entry) => entry.completed),
+      dailyClaimed: mapped.filter((entry) => entry.period === 'daily').every((entry) => entry.claimed),
+      weeklyReady: mapped.filter((entry) => entry.period === 'weekly').every((entry) => entry.completed),
+      weeklyClaimed: mapped.filter((entry) => entry.period === 'weekly').every((entry) => entry.claimed),
       daily: mapped.filter((entry) => entry.period === 'daily'),
       weekly: mapped.filter((entry) => entry.period === 'weekly')
     };
@@ -1189,32 +1224,44 @@ export class MolgianService {
   public async missionClaim(
     discordId: string,
     username: string,
-    missionId: string
+    period: MissionPeriod
   ): Promise<{ ok: boolean; message: string }> {
     const user = await this.ensureUser(discordId, username);
-    const mission = MISSION_DEFINITIONS.find((entry) => entry.id === missionId);
-    if (!mission) return { ok: false, message: 'Unknown mission id.' };
+    const now = nowMs();
+    const periodKey = this.missionPeriodKey(period, now);
+    const claimedKey = this.missionPeriodClaimedKey(user.id, period, periodKey);
+    if (this.getState(claimedKey) === '1') {
+      return { ok: false, message: `${period === 'daily' ? 'Daily' : 'Weekly'} mission reward already claimed.` };
+    }
 
-    const state = this.missionProgress(user.id, mission, nowMs());
-    if (!state.completed) {
+    const periodMissions = MISSION_DEFINITIONS.filter((mission) => mission.period === period);
+    const pending = periodMissions
+      .map((mission) => {
+        const state = this.missionProgress(user.id, mission, now);
+        return { mission, state };
+      })
+      .filter((entry) => !entry.state.completed);
+    if (pending.length > 0) {
+      const pendingText = pending
+        .map((entry) => `${entry.mission.label} (${entry.state.progress}/${entry.mission.target})`)
+        .join(', ');
       return {
         ok: false,
-        message: `Mission not complete yet: ${mission.label} (${state.progress}/${mission.target}).`
+        message: `Complete all ${period} missions first. Pending: ${pendingText}.`
       };
     }
-    if (state.claimed) return { ok: false, message: 'Mission already claimed for this period.' };
 
     const rewardTenths = pickRandom(MISSION_SHARD_REWARD_TENTHS);
-    const [minMolgium, maxMolgium] = MISSION_MOLGIUM_REWARD_RANGE[mission.period];
+    const [minMolgium, maxMolgium] = MISSION_MOLGIUM_REWARD_RANGE[period];
     const molgiumReward = randomIntInclusive(minMolgium, maxMolgium);
     const newBalance = this.changeBalance(user.id, molgiumReward);
     this.addShardsTenths(user.id, rewardTenths);
-    this.setState(this.missionClaimedKey(user.id, mission.id, state.periodKey), '1');
+    this.setState(claimedKey, '1');
 
     return {
       ok: true,
       message:
-        `Mission claimed: ${mission.label}. ` +
+        `${period === 'daily' ? 'Daily' : 'Weekly'} mission reward claimed. ` +
         `Reward: ${this.formatShardAmount(rewardTenths / 10)} shards + ${molgiumReward} Molgium. ` +
         `New balance: ${newBalance} Molgium.`
     };
@@ -3795,7 +3842,10 @@ export class MolgianService {
     return [...this.activeUsers.entries()]
       .filter(([, seenAt]) => seenAt >= threshold)
       .map(([discordId]) => this.guild!.members.cache.get(discordId))
-      .filter((member): member is GuildMember => !!member && !member.user.bot);
+      .filter(
+        (member): member is GuildMember =>
+          !!member && !member.user.bot && this.memberHasCitizensRole(member)
+      );
   }
 
   private eventEmbed(content: string, title = 'Special Place'): ReturnType<typeof createBotEmbed> {
@@ -4001,10 +4051,14 @@ export class MolgianService {
       });
       let finished = false;
       collector.on('collect', (message) => {
-        if (finished) return;
-        finished = true;
-        resolve(message.author.id);
-        collector.stop('winner');
+        void (async () => {
+          if (finished) return;
+          const isCitizen = await this.hasCitizensRole(message.author.id);
+          if (!isCitizen) return;
+          finished = true;
+          resolve(message.author.id);
+          collector.stop('winner');
+        })();
       });
       collector.on('end', () => {
         if (!finished) resolve(null);
@@ -4063,7 +4117,26 @@ export class MolgianService {
 
   private async eventCoinflipChaos(runId: number): Promise<void> {
     void runId;
-    const wallets = db.select().from(balances).where(gte(balances.amount, 100)).all();
+    const candidates = db
+      .select({
+        userId: balances.userId,
+        amount: balances.amount,
+        discordId: users.discordId
+      })
+      .from(balances)
+      .innerJoin(users, eq(users.id, balances.userId))
+      .where(gte(balances.amount, 100))
+      .all();
+    const wallets: Array<{ userId: number; amount: number }> = [];
+    for (const candidate of candidates) {
+      if (await this.hasCitizensRole(candidate.discordId)) {
+        wallets.push({ userId: candidate.userId, amount: candidate.amount });
+      }
+    }
+    if (wallets.length === 0) {
+      await this.sendEventPing('Coinflip Chaos skipped: no eligible Citizens with at least 100 Molgium.');
+      return;
+    }
     let wins = 0;
     let losses = 0;
     db.transaction((tx) => {
@@ -4198,11 +4271,15 @@ export class MolgianService {
         filter: (message) => !message.author.bot && message.content.trim() === phrase
       });
       let resolved = false;
-      collector.on('collect', async (message) => {
-        if (resolved) return;
-        resolved = true;
-        resolve(message);
-        collector.stop('winner');
+      collector.on('collect', (message) => {
+        void (async () => {
+          if (resolved) return;
+          const isCitizen = await this.hasCitizensRole(message.author.id);
+          if (!isCitizen) return;
+          resolved = true;
+          resolve(message);
+          collector.stop('winner');
+        })();
       });
       collector.on('end', () => {
         if (!resolved) resolve(null);
@@ -4244,6 +4321,14 @@ export class MolgianService {
       let finished = false;
       collector.on('collect', async (interaction) => {
         if (finished) return;
+        const isCitizen = await this.hasCitizensRole(interaction.user.id);
+        if (!isCitizen) {
+          await interaction.reply({
+            embeds: [createBotEmbed('Citizens role required for Egg events.', { tone: 'warning', title: 'Egg Event' })],
+            ephemeral: true
+          });
+          return;
+        }
         if (interaction.customId !== `egg_lock_${correct}`) {
           await interaction.reply({
             embeds: [createBotEmbed('Wrong lock.', { tone: 'warning', title: 'Egg Event' })],
@@ -4298,11 +4383,15 @@ export class MolgianService {
         filter: (msg) => !msg.author.bot && msg.content.trim() === answer
       });
       let found = false;
-      collector.on('collect', async (msg) => {
-        if (found) return;
-        found = true;
-        resolve(msg);
-        collector.stop('winner');
+      collector.on('collect', (msg) => {
+        void (async () => {
+          if (found) return;
+          const isCitizen = await this.hasCitizensRole(msg.author.id);
+          if (!isCitizen) return;
+          found = true;
+          resolve(msg);
+          collector.stop('winner');
+        })();
       });
       collector.on('end', () => {
         if (!found) resolve(null);
@@ -4343,6 +4432,14 @@ export class MolgianService {
       let completed = false;
       collector.on('collect', async (interaction) => {
         if (completed) return;
+        const isCitizen = await this.hasCitizensRole(interaction.user.id);
+        if (!isCitizen) {
+          await interaction.reply({
+            embeds: [createBotEmbed('Citizens role required for Egg events.', { tone: 'warning', title: 'Egg Event' })],
+            ephemeral: true
+          });
+          return;
+        }
         const pick = interaction.customId.replace('egg_choice_', '');
         if (pick !== correct) {
           await interaction.reply({
@@ -4377,14 +4474,21 @@ export class MolgianService {
   private async eggQuickDuel(runId: number, forced: boolean): Promise<void> {
     if (!this.eventChannel || !this.guild) return;
     const active = this.recentActiveMembers();
-    let pool = active.length >= 2 ? active : this.guild.members.cache.filter((m) => !m.user.bot).map((m) => m);
+    let pool =
+      active.length >= 2
+        ? active
+        : this.guild.members.cache
+            .filter((m) => !m.user.bot && this.memberHasCitizensRole(m))
+            .map((m) => m);
     if (pool.length < 2) {
       try {
         await this.guild.members.fetch();
       } catch (error) {
         logger.warn('Quick Duel member fetch failed', { error: String(error) });
       }
-      pool = this.guild.members.cache.filter((m) => !m.user.bot).map((m) => m);
+      pool = this.guild.members.cache
+        .filter((m) => !m.user.bot && this.memberHasCitizensRole(m))
+        .map((m) => m);
     }
     if (pool.length < 2) {
       this.finishEggRun(runId, null, { expired: true, reason: 'insufficient_users' });

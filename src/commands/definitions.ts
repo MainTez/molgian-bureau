@@ -430,20 +430,13 @@ export const slashCommandDefinitions: SupportedBuilder[] = [
     .addSubcommand((sub) =>
       sub
         .setName('claim')
-        .setDescription('Claim a completed mission reward.')
+        .setDescription('Claim a completed daily or weekly mission reward bundle.')
         .addStringOption((opt) =>
           opt
-            .setName('id')
-            .setDescription('Mission ID')
+            .setName('period')
+            .setDescription('Which completed mission bundle to claim')
             .setRequired(true)
-            .addChoices(
-              { name: 'daily_cast_5', value: 'daily_cast_5' },
-              { name: 'daily_gamble_3', value: 'daily_gamble_3' },
-              { name: 'daily_work_1', value: 'daily_work_1' },
-              { name: 'weekly_sell_40', value: 'weekly_sell_40' },
-              { name: 'weekly_hatch_8', value: 'weekly_hatch_8' },
-              { name: 'weekly_gamble_win_12', value: 'weekly_gamble_win_12' }
-            )
+            .addChoices({ name: 'daily', value: 'daily' }, { name: 'weekly', value: 'weekly' })
         )
     ),
   new SlashCommandBuilder()

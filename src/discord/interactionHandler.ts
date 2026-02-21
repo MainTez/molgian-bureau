@@ -7,7 +7,7 @@ import {
 import { appEnv } from '../config/env.js';
 import type { ServiceContainer } from '../services.js';
 import { createBotEmbed, type EmbedTone } from './embeds.js';
-import { CLAIM_CITIZENS_ROLE_BUTTON_ID } from './citizensRole.js';
+import { CLAIM_CITIZENS_ROLE_BUTTON_ID, RULES_CHANNEL_NAME } from './citizensRole.js';
 import type {
   BaseClassKey,
   ClassQuizGoal,
@@ -85,6 +85,18 @@ export const handleInteraction = async (
   const username = interaction.user.username;
   const discordId = interaction.user.id;
   services.game.noteUserActive(discordId);
+  const citizensBypassCommands = new Set(['admin', 'purge', 'wiki', 'patchnotes']);
+  if (!citizensBypassCommands.has(interaction.commandName)) {
+    const hasCitizensRole = await services.game.hasCitizensRole(discordId);
+    if (!hasCitizensRole) {
+      await replyWithEmbed(
+        interaction,
+        `Citizens role required. Go to #${RULES_CHANNEL_NAME} and click the Citizens button first.`,
+        { ephemeral: true, tone: 'warning', title: 'Citizens Required' }
+      );
+      return;
+    }
+  }
 
   if (interaction.commandName === 'work') {
     const result = await services.game.claimWork(discordId, username);
@@ -604,18 +616,25 @@ export const handleInteraction = async (
       const lines = [
         `Daily (${data.dailyKey}):`,
         ...data.daily.map(formatEntry),
+        `Daily claim: ${
+          data.dailyClaimed ? 'CLAIMED' : data.dailyReady ? 'READY (use /missions claim period:daily)' : 'LOCKED'
+        }`,
         '',
         `Weekly (${data.weeklyKey}):`,
         ...data.weekly.map(formatEntry),
+        `Weekly claim: ${
+          data.weeklyClaimed ? 'CLAIMED' : data.weeklyReady ? 'READY (use /missions claim period:weekly)' : 'LOCKED'
+        }`,
         '',
-        'Rewards per mission claim: random 0.1 to 0.5 shards + Molgium (daily 50-150, weekly 300-700).'
+        'Rewards per period claim: random 0.1 to 0.5 shards + Molgium (daily 50-150, weekly 300-700).',
+        'You can only claim once after all missions in that period are complete.'
       ];
       await replyWithEmbed(interaction, lines.join('\n'), { title: 'Missions' });
       return;
     }
 
-    const missionId = interaction.options.getString('id', true);
-    const result = await services.game.missionClaim(discordId, username, missionId);
+    const period = interaction.options.getString('period', true) as 'daily' | 'weekly';
+    const result = await services.game.missionClaim(discordId, username, period);
     await replyWithEmbed(interaction, result.message, {
       tone: result.ok ? 'success' : 'warning',
       title: 'Mission Claim'

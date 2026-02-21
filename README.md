@@ -195,7 +195,7 @@ Eggs/pets:
 - `/forge salvage gear_id:<id>`
 - `/forge mythic_egg`
 - `/missions view`
-- `/missions claim id:<mission_id>`
+- `/missions claim period:<daily|weekly>`
 - `/hof`
 - `/wiki home`
 - `/wiki page title:<name>`
@@ -238,9 +238,10 @@ Forge short key examples:
 - Sell tax: `20%` from fish sell payouts to Treasury
 - Gamble loss tax: `25%` of lost amount to Treasury
 - Weekly Treasury tax: `20%` from all wallets (once per week, Europe/Oslo week window)
-- Daily and weekly missions are available via `/missions` with rewards of `0.1-0.5` shards + Molgium (daily `50-150`, weekly `300-700`)
+- Daily and weekly missions are available via `/missions`; each period is claimed once after all missions in that period are complete (reward: `0.1-0.5` shards + Molgium, daily `50-150`, weekly `300-700`)
 - `/profile` now shows exact active pet passive numbers and current work streak bonus
 - Non-egg events are throttled by a global cooldown to prevent event spam
+- Gameplay commands and event participant pools are Citizens-only (users must claim the `Citizens` role first)
 
 ## 6. Tests
 
