@@ -19,7 +19,6 @@ const services = createServices();
 
 client.once(Events.ClientReady, async (readyClient) => {
   logger.info(`Logged in as ${readyClient.user.tag}`);
-  await services.game.initialize(client);
   await registerCommands(client);
 });
 
@@ -48,7 +47,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 process.on('SIGINT', () => {
-  services.game.shutdown();
   client.destroy();
   process.exit(0);
 });
